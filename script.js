@@ -675,7 +675,74 @@ class Investments {
     constructor() {
         this.investmentsBody = document.getElementById('investmentsBody');
         this.editingRowId = null;
+        this.newCompanyBtn = document.getElementById('newCompanyBtn');
+        this.initializeEventListeners();
         this.renderInvestments();
+    }
+
+    initializeEventListeners() {
+        this.newCompanyBtn.addEventListener('click', () => {
+            this.createNewCompany();
+        });
+    }
+
+    async createNewCompany() {
+        const companyName = prompt('Enter company name:');
+        if (!companyName) return;
+
+        const code = await this.generateUniqueCode();
+        
+        // Create Investment account
+        const investmentAccount = {
+            code: code,
+            name: companyName,
+            accountType: 'Investment',
+            description: `Investment account for ${companyName}`,
+            id: Date.now()
+        };
+
+        // Create MTM account
+        const mtmAccount = {
+            code: code + '1',
+            name: companyName + ' - MTM',
+            accountType: 'MTM',
+            description: 'MTM account for ' + companyName,
+            id: Date.now() + 1
+        };
+
+        // Add accounts to chart of accounts
+        const accounts = JSON.parse(localStorage.getItem('chartOfAccounts')) || [];
+        
+        // Validate accounts don't already exist
+        const existingInvestment = accounts.find(a => 
+            a.name.toLowerCase() === investmentAccount.name.toLowerCase() ||
+            a.code === investmentAccount.code
+        );
+        const existingMTM = accounts.find(a => 
+            a.name.toLowerCase() === mtmAccount.name.toLowerCase() ||
+            a.code === mtmAccount.code
+        );
+
+        if (existingInvestment || existingMTM) {
+            alert('A company with this name already exists');
+            return;
+        }
+
+        accounts.push(investmentAccount, mtmAccount);
+        localStorage.setItem('chartOfAccounts', JSON.stringify(accounts));
+        
+        this.renderInvestments();
+    }
+
+    async generateUniqueCode() {
+        const accounts = JSON.parse(localStorage.getItem('chartOfAccounts')) || [];
+        let code = 1000;
+        
+        while (accounts.some(a => a.code === code.toString())) {
+            code++;
+        }
+        
+        return code.toString();
     }
 
     generateEditingRow(account, transaction, shares, costPerShare, fmvPerShare, cost, fmv) {
@@ -844,7 +911,7 @@ class Investments {
 
     getTransactionsForAccount(accountId) {
         const transactions = JSON.parse(localStorage.getItem('journalEntries')) || [];
-        return transactions
+        const accountTransactions = transactions
             .filter(transaction => 
                 transaction.lineItems.some(item => item.accountId === accountId.toString())
             )
@@ -858,6 +925,14 @@ class Investments {
                 };
             })
             .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+        // Calculate total balance
+        const balance = accountTransactions.reduce((sum, t) => sum + t.amount, 0);
+        
+        return {
+            transactions: accountTransactions,
+            balance: balance
+        };
     }
 
     renderInvestments() {
@@ -866,8 +941,9 @@ class Investments {
         const investmentDetails = JSON.parse(localStorage.getItem('investmentDetails')) || {};
         
         investmentAccounts.forEach(account => {
-            const transactions = this.getTransactionsForAccount(account.id);
-            if (transactions.length === 0) return;
+            const { transactions, balance } = this.getTransactionsForAccount(account.id);
+            // Skip if no transactions or zero balance
+            if (transactions.length === 0 || balance === 0) return;
 
             let totalCost = 0;
             let totalFMV = 0;
@@ -1024,7 +1100,7 @@ class Reports {
                 <tbody>`;
 
         // Assets (debit balance accounts)
-        const assetTypes = ['Current Asset', 'Non-current Asset', 'Prepayment', 'Bank Account', 'MTM'];
+        const assetTypes = ['Current Asset', 'Non-current Asset', 'Prepayment', 'Bank Account', 'Investment', 'MTM'];
         let totalAssets = 0;
         
         assetTypes.forEach(assetType => {
