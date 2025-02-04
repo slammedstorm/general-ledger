@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sunny Accounting</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Sunny Accounting</h1>
+        
+        <div class="tabs">
+            <button class="tab-btn active" data-tab="journal-entries">Journal Entries</button>
+            <button class="tab-btn" data-tab="accounts">Chart of Accounts</button>
+            <button class="tab-btn" data-tab="reports">Reports</button>
+            <button class="tab-btn" data-tab="investments">Schedule of Investments</button>
+        </div>
+
+        <div id="journal-entries" class="tab-content active">
+            <form id="transactionForm">
+                <div class="transaction-header-inputs">
+                    <div class="form-group date-input">
+                        <label for="date">Date:</label>
+                        <input type="date" id="date" required>
+                    </div>
+                    <div class="form-group description-input">
+                        <label for="description">Description:</label>
+                        <input type="text" id="description">
+                    </div>
+                </div>
+                <div class="line-items-container">
+                    <div class="line-items-header">
+                        <div class="header-account">Account</div>
+                        <div class="header-description">Description</div>
+                        <div class="header-debit">Debit</div>
+                        <div class="header-credit">Credit</div>
+                        <div class="header-action"></div>
+                    </div>
+                    <div id="lineItems">
+                        <!-- Line items will be added here -->
+                    </div>
+                    <div class="line-items-totals">
+                        <div class="total-label">Totals</div>
+                        <div></div>
+                        <div class="debit-total">$0.00</div>
+                        <div class="credit-total">$0.00</div>
+                        <div class="total-spacer"></div>
+                    </div>
+                    <div id="balance-error" class="balance-error" style="display: none;">
+                        Debits and credits must be equal
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" id="addLineItem">Add Line Item</button>
+                        <button type="submit">Save Transaction</button>
+                    </div>
+                </div>
+            </form>
+
+            <div class="ledger-container">
+                <table id="ledgerTable">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Description</th>
+                            <th>Account</th>
+                            <th>Type</th>
+                            <th>Debit</th>
+                            <th>Credit</th>
+                            <th>Balance</th>
+                        </tr>
+                    </thead>
+                    <tbody id="ledgerBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div id="accounts" class="tab-content">
+            <div id="accountError" class="error-message" style="display: none;"></div>
+            <form id="accountForm">
+                <div class="form-group">
+                    <label for="accountCode">Account Code:</label>
+                    <input type="text" id="accountCode" required>
+                </div>
+                <div class="form-group">
+                    <label for="accountName">Account Name:</label>
+                    <input type="text" id="accountName" required>
+                </div>
+                <div class="form-group">
+                    <label for="accountType">Account Type:</label>
+                    <select id="accountType" required>
+                        <option value="">Select Account Type</option>
+                        <optgroup label="Asset">
+                            <option value="Current Asset">Current Asset</option>
+                            <option value="Non-current Asset">Non-current Asset</option>
+                            <option value="Prepayment">Prepayment</option>
+                            <option value="Bank Account">Bank Account</option>
+                            <option value="Investment">Investment</option>
+                            <option value="MTM">MTM</option>
+                        </optgroup>
+                        <optgroup label="Liability">
+                            <option value="Current Liability">Current Liability</option>
+                            <option value="Non-current Liability">Non-current Liability</option>
+                        </optgroup>
+                        <optgroup label="Equity">
+                            <option value="Equity">Equity</option>
+                        </optgroup>
+                        <optgroup label="Revenue">
+                            <option value="Other Income">Other Income</option>
+                            <option value="Revenue">Revenue</option>
+                            <option value="Sales">Sales</option>
+                        </optgroup>
+                        <optgroup label="Expense">
+                            <option value="Depreciation">Depreciation</option>
+                            <option value="Expense">Expense</option>
+                        </optgroup>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="accountDescription">Description:</label>
+                    <textarea id="accountDescription"></textarea>
+                </div>
+                <button type="submit">Add Account</button>
+            </form>
+
+            <div class="accounts-container">
+                <table id="accountsTable">
+                    <thead>
+                        <tr>
+                            <th>Code</th>
+                            <th>Name</th>
+                            <th>Account Type</th>
+                            <th>Description</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="accountsBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div id="reports" class="tab-content">
+            <div class="reports-container">
+                <div class="report-selector">
+                    <select id="reportType">
+                        <option value="">Select Report Type</option>
+                        <option value="balanceSheet">Balance Sheet</option>
+                        <option value="profitLoss">Profit & Loss</option>
+                        <option value="trialBalance">Trial Balance</option>
+                        <option value="generalLedger">General Ledger</option>
+                    </select>
+                    <div class="date-inputs">
+                        <div id="dateRange" class="date-range">
+                            <div class="form-group">
+                                <label for="startDate">From:</label>
+                                <input type="date" id="startDate">
+                            </div>
+                            <div class="form-group">
+                                <label for="endDate">To:</label>
+                                <input type="date" id="endDate">
+                            </div>
+                        </div>
+                        <div id="singleDate" class="single-date" style="display: none;">
+                            <div class="form-group">
+                                <label for="asOfDate">As of:</label>
+                                <input type="date" id="asOfDate">
+                            </div>
+                        </div>
+                    </div>
+                    <button id="generateReport">Generate Report</button>
+                    <button id="exportReport" style="display: none;">Export to Excel</button>
+                </div>
+                <div id="reportContent" class="report-content">
+                    <div class="report-header">
+                        <h2 id="reportTitle"></h2>
+                        <p id="reportDate"></p>
+                    </div>
+                    <div id="reportTable"></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="investments" class="tab-content">
+            <div class="investments-container">
+                <table id="investmentsTable">
+                    <thead>
+                        <tr>
+                            <th>Company</th>
+                            <th>Date</th>
+                            <th>Investment Type</th>
+                            <th>Shares</th>
+                            <th>P/Sh - Cost</th>
+                            <th>P/Sh - FMV</th>
+                            <th>Cost Basis</th>
+                            <th>FMV</th>
+                            <th>Unrealized Gain/Loss</th>
+                        </tr>
+                    </thead>
+                    <tbody id="investmentsBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
