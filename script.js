@@ -2070,17 +2070,16 @@ class Reconciliation {
                 <td>${this.formatDate(transaction.date)}</td>
                 <td>${transaction.description || ''}</td>
                 <td class="amount-cell">${this.formatCurrency(transaction.amount)}</td>
-                <td>
-                    <button class="reconcile-btn" data-transaction-id="${transaction.id}">Reconcile</button>
-                </td>
+                <td class="reconcile-cell"></td>
             `;
-
-            row.querySelector('.reconcile-btn').addEventListener('click', () => {
-                this.reconcileEntry(transaction.id, 'bank');
-            });
-
             this.bankTransactionsBody.appendChild(row);
+            
+            // Store reference to the reconcile cell for later use
+            transaction.reconcileCell = row.querySelector('.reconcile-cell');
         });
+        
+        // After rendering all transactions, match them with book entries
+        this.matchTransactionsWithEntries();
     }
 
     renderBookEntries(entries) {
@@ -2101,12 +2100,7 @@ class Reconciliation {
                     </select>
                 </td>
                 <td class="amount-cell">${this.formatCurrency(entry.amount)}</td>
-                <td>
-                    ${entry.reconciled ? 
-                        '<span class="reconciled-status">Reconciled</span>' :
-                        `<button class="reconcile-btn" data-entry-id="${entry.id}">Reconcile</button>`
-                    }
-                </td>
+                <td class="reconcile-cell"></td>
             `;
 
             // Add event listeners
@@ -2121,19 +2115,70 @@ class Reconciliation {
                 this.updateBookEntry(entry.id, { description: descriptionInput.value });
             });
 
-            const reconcileBtn = row.querySelector('.reconcile-btn');
-            if (reconcileBtn) {
-                reconcileBtn.addEventListener('click', () => {
-                    if (!accountSelect.value) {
-                        alert('Please select an account before reconciling');
-                        return;
-                    }
-                    this.reconcileEntry(entry.id);
+            this.bookEntriesBody.appendChild(row);
+            
+            // Store reference to the reconcile cell for later use
+            entry.reconcileCell = row.querySelector('.reconcile-cell');
+        });
+        
+        // After rendering all entries, match them with bank transactions
+        this.matchTransactionsWithEntries();
+    }
+
+    matchTransactionsWithEntries() {
+        const bankTransactions = JSON.parse(localStorage.getItem('bankTransactions')) || [];
+        const bookEntries = JSON.parse(localStorage.getItem('bookEntries')) || [];
+        const accountId = this.bankAccountSelect.value;
+        
+        // Get unreconciled transactions and entries
+        const unreconciledTransactions = bankTransactions.filter(t => 
+            t.bankAccountId === accountId && !this.isReconciled(t.id)
+        );
+        
+        const unreconciledEntries = bookEntries.filter(e => 
+            e.bankAccountId === accountId && !this.isReconciled(e.id)
+        );
+
+        // Match transactions with entries based on amount and date
+        unreconciledTransactions.forEach(transaction => {
+            if (!transaction.reconcileCell) return;
+
+            const matchingEntries = unreconciledEntries.filter(entry => 
+                entry.amount === transaction.amount &&
+                Math.abs(new Date(entry.date) - new Date(transaction.date)) <= 3 * 24 * 60 * 60 * 1000 // Within 3 days
+            );
+
+            if (matchingEntries.length > 0) {
+                matchingEntries.forEach(entry => {
+                    if (!entry.reconcileCell) return;
+
+                    const reconcileBtn = document.createElement('button');
+                    reconcileBtn.className = 'reconcile-btn';
+                    reconcileBtn.textContent = '⇄';
+                    reconcileBtn.title = 'Reconcile';
+                    
+                    reconcileBtn.addEventListener('click', () => {
+                        const accountSelect = document.querySelector(`.account-select[data-entry-id="${entry.id}"]`);
+                        if (!accountSelect.value) {
+                            alert('Please select an account before reconciling');
+                            return;
+                        }
+                        this.reconcileEntry(entry.id);
+                        this.reconcileEntry(transaction.id);
+                        this.loadUnreconciledEntries();
+                    });
+
+                    // Add button to both cells
+                    transaction.reconcileCell.appendChild(reconcileBtn.cloneNode(true));
+                    entry.reconcileCell.appendChild(reconcileBtn);
                 });
             }
-
-            this.bookEntriesBody.appendChild(row);
         });
+    }
+
+    isReconciled(id) {
+        const reconciledEntries = JSON.parse(localStorage.getItem('reconciledEntries')) || {};
+        return !!reconciledEntries[id];
     }
 
     generateAccountOptions(accounts, selectedId = '') {
