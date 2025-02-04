@@ -486,46 +486,53 @@ th {
     margin-top: 20px;
 }
 
-.reconciliation-columns {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 20px;
+/* Reconciliation Selection Styles */
+#bankTransactionsTable tr.selected {
+    background-color: #e3f2fd;
 }
 
-.bank-transactions,
-.book-entries {
+#bankTransactionsTable tr:hover {
+    background-color: #f5f5f5;
+}
+
+.bank-transactions {
     background-color: white;
     border-radius: 4px;
     padding: 20px;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
-.bank-transactions h3,
-.book-entries h3 {
+.bank-transactions h3 {
     margin-top: 0;
     margin-bottom: 20px;
     color: #333;
 }
 
-#bankTransactionsTable,
-#bookEntriesTable {
+#bankTransactionsTable {
     width: 100%;
     border-collapse: collapse;
 }
 
 #bankTransactionsTable th,
-#bankTransactionsTable td,
-#bookEntriesTable th,
-#bookEntriesTable td {
+#bankTransactionsTable td {
     padding: 12px;
     text-align: left;
     border-bottom: 1px solid #ddd;
 }
 
-#bankTransactionsTable th,
-#bookEntriesTable th {
+#bankTransactionsTable th {
     background-color: #f8f9fa;
     font-weight: bold;
+}
+
+.reconcile-controls {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.reconcile-controls .account-select {
+    min-width: 200px;
 }
 
 .reconcile-btn {
@@ -535,8 +542,33 @@ th {
     border-radius: 4px;
     padding: 6px 12px;
     cursor: pointer;
+    transition: background-color 0.2s;
 }
 
-#unreconciledTable .reconcile-btn:hover {
+.reconcile-btn:hover {
     background-color: #218838;
+}
+
+.reconcile-btn:disabled {
+    background-color: #6c757d;
+    cursor: not-allowed;
+}
+
+.confirm-btn {
+    background-color: #007bff;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 6px 12px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.confirm-btn:hover {
+    background-color: #0056b3;
+}
+
+.confirm-btn:disabled {
+    background-color: #6c757d;
+    cursor: not-allowed;
 }

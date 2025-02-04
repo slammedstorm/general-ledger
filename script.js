@@ -1784,7 +1784,6 @@ class Reconciliation {
         this.startDate = document.getElementById('reconStartDate');
         this.endDate = document.getElementById('reconEndDate');
         this.bankTransactionsBody = document.getElementById('bankTransactionsBody');
-        this.bookEntriesBody = document.getElementById('bookEntriesBody');
         this.importBankBtn = document.getElementById('importBankBtn');
         this.exportTemplateBtn = document.getElementById('exportTemplateBtn');
         this.bankTransactionFile = document.getElementById('bankTransactionFile');
@@ -2001,30 +2000,11 @@ class Reconciliation {
         localStorage.setItem('bankTransactions', JSON.stringify(newTransactions));
     }
 
-    async generateBookEntries(bankTransactions) {
-        const bookEntries = JSON.parse(localStorage.getItem('bookEntries')) || [];
-        const newEntries = bankTransactions.map(transaction => ({
-            id: Date.now() + Math.random(),
-            date: transaction.date,
-            description: transaction.description,
-            bankAccountId: transaction.bankAccountId,
-            amount: transaction.amount,
-            bankTransactionId: transaction.id,
-            status: 'pending',
-            accountId: '', // To be filled by user
-            reconciled: false
-        }));
-        
-        bookEntries.push(...newEntries);
-        localStorage.setItem('bookEntries', JSON.stringify(bookEntries));
-    }
-
     loadUnreconciledEntries() {
         const accountId = this.bankAccountSelect.value;
         if (!accountId) return;
 
         const bankTransactions = JSON.parse(localStorage.getItem('bankTransactions')) || [];
-        const bookEntries = JSON.parse(localStorage.getItem('bookEntries')) || [];
         const reconciledEntries = JSON.parse(localStorage.getItem('reconciledEntries')) || {};
         
         // Filter by date range if provided
@@ -2044,136 +2024,91 @@ class Reconciliation {
             })
             .sort((a, b) => new Date(a.date) - new Date(b.date));
 
-        // Filter book entries
-        const unreconciledBookEntries = bookEntries
-            .filter(entry => {
-                const entryDate = new Date(entry.date);
-                const withinDateRange = (!startDate || entryDate >= startDate) && 
-                                      (!endDate || entryDate <= endDate);
-                
-                return entry.bankAccountId === accountId && 
-                       !reconciledEntries[entry.id] &&
-                       withinDateRange;
-            })
-            .sort((a, b) => new Date(a.date) - new Date(b.date));
-
         this.renderBankTransactions(unreconciledBankTransactions);
-        this.renderBookEntries(unreconciledBookEntries);
     }
 
     renderBankTransactions(transactions) {
         this.bankTransactionsBody.innerHTML = '';
+        const accounts = JSON.parse(localStorage.getItem('chartOfAccounts')) || [];
         
         transactions.forEach(transaction => {
             const row = document.createElement('tr');
+            row.dataset.id = transaction.id;
             row.innerHTML = `
                 <td>${this.formatDate(transaction.date)}</td>
                 <td>${transaction.description || ''}</td>
                 <td class="amount-cell">${this.formatCurrency(transaction.amount)}</td>
-                <td class="reconcile-cell"></td>
+                <td>
+                    <div class="reconcile-controls" style="display: flex; gap: 10px; align-items: center;">
+                        <select class="account-select" style="display: none;">
+                            <option value="">Select Account</option>
+                            ${this.generateAccountOptions(accounts)}
+                        </select>
+                        <button class="confirm-btn" style="display: none;">Confirm</button>
+                        <button class="reconcile-btn">Reconcile</button>
+                    </div>
+                </td>
             `;
-            this.bankTransactionsBody.appendChild(row);
             
-            // Store reference to the reconcile cell for later use
-            transaction.reconcileCell = row.querySelector('.reconcile-cell');
-        });
-        
-        // After rendering all transactions, match them with book entries
-        this.matchTransactionsWithEntries();
-    }
-
-    renderBookEntries(entries) {
-        this.bookEntriesBody.innerHTML = '';
-        const accounts = JSON.parse(localStorage.getItem('chartOfAccounts')) || [];
-        
-        entries.forEach(entry => {
-            const row = document.createElement('tr');
-            row.innerHTML = `
-                <td>${this.formatDate(entry.date)}</td>
-                <td>
-                    <input type="text" class="description-input" value="${entry.description || ''}" ${entry.reconciled ? 'disabled' : ''}>
-                </td>
-                <td>
-                    <select class="account-select" data-entry-id="${entry.id}" ${entry.reconciled ? 'disabled' : ''}>
-                        <option value="">Select Account</option>
-                        ${this.generateAccountOptions(accounts, entry.accountId)}
-                    </select>
-                </td>
-                <td class="amount-cell">${this.formatCurrency(entry.amount)}</td>
-                <td class="reconcile-cell"></td>
-            `;
-
-            // Add event listeners
+            // Add click handlers
+            const reconcileControls = row.querySelector('.reconcile-controls');
+            const reconcileBtn = row.querySelector('.reconcile-btn');
             const accountSelect = row.querySelector('.account-select');
-            const descriptionInput = row.querySelector('.description-input');
-
-            accountSelect.addEventListener('change', () => {
-                this.updateBookEntry(entry.id, { accountId: accountSelect.value });
-            });
-
-            descriptionInput.addEventListener('change', () => {
-                this.updateBookEntry(entry.id, { description: descriptionInput.value });
-            });
-
-            this.bookEntriesBody.appendChild(row);
+            const confirmBtn = row.querySelector('.confirm-btn');
             
-            // Store reference to the reconcile cell for later use
-            entry.reconcileCell = row.querySelector('.reconcile-cell');
+            reconcileBtn.addEventListener('click', () => {
+                // Show account select and confirm button
+                accountSelect.style.display = 'inline-block';
+                confirmBtn.style.display = 'inline-block';
+                reconcileBtn.style.display = 'none';
+            });
+            
+            confirmBtn.addEventListener('click', () => {
+                if (!accountSelect.value) {
+                    alert('Please select an account first');
+                    return;
+                }
+                this.reconcileTransaction(transaction, accountSelect.value);
+            });
+            
+            this.bankTransactionsBody.appendChild(row);
         });
-        
-        // After rendering all entries, match them with bank transactions
-        this.matchTransactionsWithEntries();
     }
 
-    matchTransactionsWithEntries() {
-        const bankTransactions = JSON.parse(localStorage.getItem('bankTransactions')) || [];
-        const bookEntries = JSON.parse(localStorage.getItem('bookEntries')) || [];
-        const accountId = this.bankAccountSelect.value;
+    reconcileTransaction(transaction, selectedAccountId) {
+        // Create journal entry
+        const journalEntries = JSON.parse(localStorage.getItem('journalEntries')) || [];
+        const newEntry = {
+            date: transaction.date,
+            description: transaction.description,
+            lineItems: [
+                {
+                    accountId: this.bankAccountSelect.value,
+                    accountName: this.getAccountName(this.bankAccountSelect.value),
+                    accountType: 'Bank Account',
+                    description: transaction.description,
+                    type: transaction.amount > 0 ? 'debit' : 'credit',
+                    amount: Math.abs(transaction.amount)
+                },
+                {
+                    accountId: selectedAccountId,
+                    accountName: this.getAccountName(selectedAccountId),
+                    accountType: this.getAccountType(selectedAccountId),
+                    description: transaction.description,
+                    type: transaction.amount > 0 ? 'credit' : 'debit',
+                    amount: Math.abs(transaction.amount)
+                }
+            ],
+            id: Date.now()
+        };
+        journalEntries.push(newEntry);
+        localStorage.setItem('journalEntries', JSON.stringify(journalEntries));
+
+        // Mark transaction as reconciled
+        this.reconcileEntry(transaction.id);
         
-        // Get unreconciled transactions and entries
-        const unreconciledTransactions = bankTransactions.filter(t => 
-            t.bankAccountId === accountId && !this.isReconciled(t.id)
-        );
-        
-        const unreconciledEntries = bookEntries.filter(e => 
-            e.bankAccountId === accountId && !this.isReconciled(e.id)
-        );
-
-        // Match transactions with entries based on amount and date
-        unreconciledTransactions.forEach(transaction => {
-            if (!transaction.reconcileCell) return;
-
-            const matchingEntries = unreconciledEntries.filter(entry => 
-                entry.amount === transaction.amount &&
-                Math.abs(new Date(entry.date) - new Date(transaction.date)) <= 3 * 24 * 60 * 60 * 1000 // Within 3 days
-            );
-
-            if (matchingEntries.length > 0) {
-                matchingEntries.forEach(entry => {
-                    if (!entry.reconcileCell) return;
-
-                    const reconcileBtn = document.createElement('button');
-                    reconcileBtn.className = 'reconcile-btn';
-                    reconcileBtn.textContent = '⇄';
-                    reconcileBtn.title = 'Reconcile';
-                    
-                    reconcileBtn.addEventListener('click', () => {
-                        const accountSelect = document.querySelector(`.account-select[data-entry-id="${entry.id}"]`);
-                        if (!accountSelect.value) {
-                            alert('Please select an account before reconciling');
-                            return;
-                        }
-                        this.reconcileEntry(entry.id);
-                        this.reconcileEntry(transaction.id);
-                        this.loadUnreconciledEntries();
-                    });
-
-                    // Add button to both cells
-                    transaction.reconcileCell.appendChild(reconcileBtn.cloneNode(true));
-                    entry.reconcileCell.appendChild(reconcileBtn);
-                });
-            }
-        });
+        // Refresh the view
+        this.loadUnreconciledEntries();
     }
 
     isReconciled(id) {
@@ -2204,15 +2139,6 @@ class Reconciliation {
         return options;
     }
 
-    updateBookEntry(entryId, updates) {
-        const bookEntries = JSON.parse(localStorage.getItem('bookEntries')) || [];
-        const index = bookEntries.findIndex(entry => entry.id === entryId);
-        if (index !== -1) {
-            bookEntries[index] = { ...bookEntries[index], ...updates };
-            localStorage.setItem('bookEntries', JSON.stringify(bookEntries));
-        }
-    }
-
     reconcileEntry(entryId) {
         const reconciledEntries = JSON.parse(localStorage.getItem('reconciledEntries')) || {};
         reconciledEntries[entryId] = {
@@ -2220,37 +2146,6 @@ class Reconciliation {
             bankAccountId: this.bankAccountSelect.value
         };
 
-        // Create journal entry if this is a book entry
-        const bookEntries = JSON.parse(localStorage.getItem('bookEntries')) || [];
-        const bookEntry = bookEntries.find(entry => entry.id === entryId);
-        if (bookEntry && bookEntry.accountId) {
-            const journalEntries = JSON.parse(localStorage.getItem('journalEntries')) || [];
-            const newEntry = {
-                date: bookEntry.date,
-                description: bookEntry.description,
-                lineItems: [
-                    {
-                        accountId: this.bankAccountSelect.value,
-                        accountName: this.getAccountName(this.bankAccountSelect.value),
-                        accountType: 'Bank Account',
-                        description: bookEntry.description,
-                        type: bookEntry.amount > 0 ? 'debit' : 'credit',
-                        amount: Math.abs(bookEntry.amount)
-                    },
-                    {
-                        accountId: bookEntry.accountId,
-                        accountName: this.getAccountName(bookEntry.accountId),
-                        accountType: this.getAccountType(bookEntry.accountId),
-                        description: bookEntry.description,
-                        type: bookEntry.amount > 0 ? 'credit' : 'debit',
-                        amount: Math.abs(bookEntry.amount)
-                    }
-                ],
-                id: Date.now()
-            };
-            journalEntries.push(newEntry);
-            localStorage.setItem('journalEntries', JSON.stringify(journalEntries));
-        }
 
         localStorage.setItem('reconciledEntries', JSON.stringify(reconciledEntries));
         this.loadUnreconciledEntries();
