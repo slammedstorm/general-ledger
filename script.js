@@ -762,10 +762,19 @@ class Investments {
         row.innerHTML = `
             <td><input type="text" class="edit-company" value="${account.name}"></td>
             <td>${new Date(transaction.date).toLocaleDateString()}</td>
-            <td><input type="text" class="edit-round" value="${details.round || ''}"></td>
-            <td class="amount-cell"><input type="number" class="edit-shares" value="${shares}"></td>
-            <td class="amount-cell">${this.formatCurrency(costPerShare)}</td>
-            <td class="amount-cell"><input type="number" step="0.01" class="edit-fmv-per-share" value="${fmvPerShare}"></td>
+            <td>
+                <select class="edit-round">
+                    <option value="SAFE" ${details.round === "SAFE" ? "selected" : ""}>SAFE</option>
+                    <option value="Series Seed Preferred" ${details.round === "Series Seed Preferred" ? "selected" : ""}>Series Seed Preferred</option>
+                    <option value="Series A Preferred" ${details.round === "Series A Preferred" ? "selected" : ""}>Series A Preferred</option>
+                    <option value="Series B Preferred" ${details.round === "Series B Preferred" ? "selected" : ""}>Series B Preferred</option>
+                    <option value="Series C Preferred" ${details.round === "Series C Preferred" ? "selected" : ""}>Series C Preferred</option>
+                    <option value="Convertible Note" ${details.round === "Convertible Note" ? "selected" : ""}>Convertible Note</option>
+                </select>
+            </td>
+            <td class="amount-cell"><input type="number" class="edit-shares" value="${shares || ''}"></td>
+            <td class="amount-cell">${shares ? this.formatCurrency(costPerShare) : ''}</td>
+            <td class="amount-cell"><input type="number" step="0.01" class="edit-fmv-per-share" value="${fmvPerShare || ''}"></td>
             <td class="amount-cell">${this.formatCurrency(cost)}</td>
             <td class="amount-cell"><input type="number" step="0.01" class="edit-fmv" value="${fmv}"></td>
             <td class="amount-cell ${fmv - cost >= 0 ? 'positive' : 'negative'}">
@@ -783,21 +792,32 @@ class Investments {
         const fmvInput = row.querySelector('.edit-fmv');
 
         sharesInput.addEventListener('input', () => {
-            const shares = parseFloat(sharesInput.value) || 0;
-            const fmvPerShare = parseFloat(fmvPerShareInput.value) || 0;
-            fmvInput.value = (shares * fmvPerShare).toFixed(2);
+            const shares = parseFloat(sharesInput.value);
+            if (!shares || shares === 0) {
+                fmvPerShareInput.value = '';
+                fmvInput.value = cost.toFixed(2); // Set FMV equal to cost
+            } else {
+                const fmvPerShare = parseFloat(fmvPerShareInput.value) || 0;
+                fmvInput.value = (shares * fmvPerShare).toFixed(2);
+            }
         });
 
         fmvPerShareInput.addEventListener('input', () => {
-            const shares = parseFloat(sharesInput.value) || 0;
-            const fmvPerShare = parseFloat(fmvPerShareInput.value) || 0;
-            fmvInput.value = (shares * fmvPerShare).toFixed(2);
+            const shares = parseFloat(sharesInput.value);
+            if (!shares || shares === 0) {
+                fmvInput.value = cost.toFixed(2); // Set FMV equal to cost
+            } else {
+                const fmvPerShare = parseFloat(fmvPerShareInput.value) || 0;
+                fmvInput.value = (shares * fmvPerShare).toFixed(2);
+            }
         });
 
         fmvInput.addEventListener('input', () => {
-            const shares = parseFloat(sharesInput.value) || 0;
-            const fmv = parseFloat(fmvInput.value) || 0;
-            if (shares > 0) {
+            const shares = parseFloat(sharesInput.value);
+            if (!shares || shares === 0) {
+                fmvPerShareInput.value = '';
+            } else {
+                const fmv = parseFloat(fmvInput.value) || 0;
                 fmvPerShareInput.value = (fmv / shares).toFixed(2);
             }
         });
@@ -818,9 +838,10 @@ class Investments {
     saveInvestmentEdit(row, account, transaction) {
         const newCompany = row.querySelector('.edit-company').value.trim();
         const newRound = row.querySelector('.edit-round').value.trim();
-        const newShares = parseFloat(row.querySelector('.edit-shares').value) || 0;
-        const newFmvPerShare = parseFloat(row.querySelector('.edit-fmv-per-share').value) || 0;
-        const newFmv = parseFloat(row.querySelector('.edit-fmv').value) || 0;
+        const sharesInput = row.querySelector('.edit-shares').value.trim();
+        const newShares = sharesInput ? parseFloat(sharesInput) : null;
+        const newFmvPerShare = newShares ? parseFloat(row.querySelector('.edit-fmv-per-share').value) || 0 : null;
+        const newFmv = parseFloat(row.querySelector('.edit-fmv').value) || transaction.amount;
 
         const accounts = JSON.parse(localStorage.getItem('chartOfAccounts')) || [];
         
@@ -968,9 +989,9 @@ class Investments {
                 const details = investmentDetails[account.id]?.[transaction.date] || {};
                 
                 // Use stored values or defaults
-                const shares = details.shares || 100;
-                const costPerShare = cost / shares;
-                const fmvPerShare = details.fmvPerShare || costPerShare;
+                const shares = details.shares;
+                const costPerShare = shares ? cost / shares : null;
+                const fmvPerShare = details.fmvPerShare;
                 const fmv = details.fmv || cost;
                 const unrealizedGainLoss = fmv - cost;
                 
@@ -997,9 +1018,9 @@ class Investments {
                         <td>${account.name}</td>
                         <td>${this.formatDate(transaction.date)}</td>
                         <td>${details.round || ''}</td>
-                        <td class="amount-cell">${shares.toLocaleString()}</td>
-                        <td class="amount-cell">${this.formatCurrency(costPerShare)}</td>
-                        <td class="amount-cell">${this.formatCurrency(fmvPerShare)}</td>
+                        <td class="amount-cell">${shares ? shares.toLocaleString() : ''}</td>
+                        <td class="amount-cell">${costPerShare ? this.formatCurrency(costPerShare) : ''}</td>
+                        <td class="amount-cell">${fmvPerShare ? this.formatCurrency(fmvPerShare) : ''}</td>
                         <td class="amount-cell">${this.formatCurrency(cost)}</td>
                         <td class="amount-cell">${this.formatCurrency(fmv)}</td>
                         <td class="amount-cell ${unrealizedGainLoss >= 0 ? 'positive' : 'negative'}">
