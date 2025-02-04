@@ -279,6 +279,8 @@ class GeneralLedger {
         this.ledgerBody = document.getElementById('ledgerBody');
         this.lineItemsContainer = document.getElementById('lineItems');
         this.addLineItemBtn = document.getElementById('addLineItem');
+        this.sortDateBtn = document.getElementById('sortDateBtn');
+        this.sortDirection = 'asc'; // Default sort direction
         
         this.initializeEventListeners();
         this.addLineItemRow();
@@ -286,6 +288,12 @@ class GeneralLedger {
     }
 
     initializeEventListeners() {
+        this.sortDateBtn.addEventListener('click', () => {
+            this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc';
+            this.sortDateBtn.textContent = `Sort by Date ${this.sortDirection === 'asc' ? '↑' : '↓'}`;
+            this.renderLedger();
+        });
+
         this.form.addEventListener('submit', (e) => {
             e.preventDefault();
             this.addTransaction();
@@ -462,6 +470,12 @@ class GeneralLedger {
         return chartOfAccounts.find(account => account.id.toString() === id);
     }
 
+    formatDate(dateString) {
+        // Add time component to ensure date is interpreted in local timezone
+        const date = new Date(dateString + 'T00:00:00');
+        return date.toLocaleDateString();
+    }
+
     formatCurrency(amount) {
         return new Intl.NumberFormat('en-US', {
             style: 'currency',
@@ -474,7 +488,13 @@ class GeneralLedger {
         let runningBalance = 0;
 
         this.transactions
-            .sort((a, b) => new Date(a.date) - new Date(b.date))
+            .sort((a, b) => {
+                const dateA = new Date(a.date);
+                const dateB = new Date(b.date);
+                return this.sortDirection === 'asc' ? 
+                    dateA - dateB : 
+                    dateB - dateA;
+            })
             .forEach(transaction => {
                 const isEditing = this.editingTransactionId === transaction.id;
                 
@@ -505,7 +525,7 @@ class GeneralLedger {
                     });
                 } else {
                     headerRow.innerHTML = `
-                        <td>${new Date(transaction.date).toLocaleDateString()}</td>
+                        <td>${this.formatDate(transaction.date)}</td>
                         <td colspan="5">${transaction.description || ''}</td>
                         <td class="transaction-actions">
                             <button class="edit-btn" data-id="${transaction.id}">Edit</button>
@@ -972,7 +992,7 @@ class Investments {
                     const row = document.createElement('tr');
                     row.innerHTML = `
                         <td>${account.name}</td>
-                        <td>${new Date(transaction.date).toLocaleDateString()}</td>
+                        <td>${this.formatDate(transaction.date)}</td>
                         <td>${account.accountType}</td>
                         <td class="amount-cell">${shares.toLocaleString()}</td>
                         <td class="amount-cell">${this.formatCurrency(costPerShare)}</td>
@@ -1019,6 +1039,12 @@ class Investments {
         });
     }
 
+    formatDate(dateString) {
+        // Add time component to ensure date is interpreted in local timezone
+        const date = new Date(dateString + 'T00:00:00');
+        return date.toLocaleDateString();
+    }
+
     formatCurrency(amount) {
         return new Intl.NumberFormat('en-US', {
             style: 'currency',
@@ -1046,6 +1072,10 @@ class Reports {
     initializeEventListeners() {
         this.reportType.addEventListener('change', () => {
             this.toggleDateInputs();
+            this.toggleAccountSelector();
+            if (this.reportType.value === 'transaction') {
+                this.populateAccountSelector();
+            }
         });
 
         this.generateButton.addEventListener('click', () => {
@@ -1079,7 +1109,7 @@ class Reports {
         const balances = this.calculateAccountBalances(transactions);
         
         this.reportTitle.textContent = 'Balance Sheet';
-        this.reportDate.textContent = `As of ${new Date(this.asOfDate.value).toLocaleDateString()}`;
+        this.reportDate.textContent = `As of ${this.formatDate(this.asOfDate.value)}`;
 
         let html = `
             <table>
@@ -1271,7 +1301,167 @@ class Reports {
             case 'generalLedger':
                 this.generateGeneralLedger();
                 break;
+            case 'transaction':
+                this.generateTransaction();
+                break;
         }
+    }
+
+    toggleAccountSelector() {
+        const accountSelector = document.getElementById('accountSelector');
+        accountSelector.style.display = this.reportType.value === 'transaction' ? 'block' : 'none';
+    }
+
+    populateAccountSelector() {
+        const customSelect = document.querySelector('.custom-select');
+        const selectHeader = customSelect.querySelector('.select-header');
+        const selectText = customSelect.querySelector('.select-text');
+        const dropdown = customSelect.querySelector('.select-dropdown');
+        const accounts = JSON.parse(localStorage.getItem('chartOfAccounts')) || [];
+        
+        // Clear existing content
+        dropdown.innerHTML = '';
+        
+        // Group accounts by type
+        const accountsByType = accounts.reduce((acc, account) => {
+            if (!acc[account.accountType]) {
+                acc[account.accountType] = [];
+            }
+            acc[account.accountType].push(account);
+            return acc;
+        }, {});
+
+        // Add grouped checkboxes
+        Object.entries(accountsByType).forEach(([type, accounts]) => {
+            const groupDiv = document.createElement('div');
+            groupDiv.className = 'account-group';
+            
+            const groupLabel = document.createElement('div');
+            groupLabel.className = 'account-group-label';
+            groupLabel.textContent = type;
+            groupDiv.appendChild(groupLabel);
+            
+            accounts
+                .sort((a, b) => a.code.localeCompare(b.code))
+                .forEach(account => {
+                    const itemDiv = document.createElement('div');
+                    itemDiv.className = 'account-checkbox-item';
+                    
+                    const label = document.createElement('label');
+                    const checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.value = account.id;
+                    checkbox.id = `account-${account.id}`;
+                    
+                    // Add change event to update header text
+                    checkbox.addEventListener('change', () => {
+                        const selectedCount = dropdown.querySelectorAll('input[type="checkbox"]:checked').length;
+                        if (selectedCount === 0) {
+                            selectText.textContent = 'Select accounts...';
+                            selectText.style.color = '#666';
+                        } else {
+                            selectText.textContent = `${selectedCount} account${selectedCount === 1 ? '' : 's'} selected`;
+                            selectText.style.color = '#333';
+                        }
+                    });
+                    
+                    label.appendChild(checkbox);
+                    label.appendChild(document.createTextNode(`${account.code} - ${account.name}`));
+                    itemDiv.appendChild(label);
+                    groupDiv.appendChild(itemDiv);
+                });
+            
+            dropdown.appendChild(groupDiv);
+        });
+
+        // Toggle dropdown on header click
+        selectHeader.addEventListener('click', (e) => {
+            e.stopPropagation();
+            customSelect.classList.toggle('open');
+        });
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!customSelect.contains(e.target)) {
+                customSelect.classList.remove('open');
+            }
+        });
+
+        // Prevent dropdown from closing when clicking inside
+        dropdown.addEventListener('click', (e) => {
+            e.stopPropagation();
+        });
+    }
+
+    generateTransaction() {
+        const selectedAccountIds = Array.from(document.querySelectorAll('.account-checkbox-item input[type="checkbox"]:checked'))
+            .map(checkbox => checkbox.value);
+
+        if (selectedAccountIds.length === 0) {
+            alert('Please select at least one account');
+            return;
+        }
+
+        const transactions = this.getTransactionsInRange();
+        
+        this.reportTitle.textContent = 'Transaction Report';
+        this.reportDate.textContent = `${this.formatDate(this.startDate.value)} - ${this.formatDate(this.endDate.value)}`;
+
+        let html = '';
+        
+        selectedAccountIds.forEach(accountId => {
+            const account = this.getAccountById(accountId);
+            if (!account) return;
+
+            html += `
+                <div class="account-section">
+                    <h3>${account.code} - ${account.name}</h3>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Description</th>
+                                <th class="amount-cell">Debit</th>
+                                <th class="amount-cell">Credit</th>
+                                <th class="amount-cell">Balance</th>
+                            </tr>
+                        </thead>
+                        <tbody>`;
+
+            let runningBalance = 0;
+            const accountTransactions = transactions
+                .filter(t => t.lineItems.some(item => item.accountId === accountId))
+                .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+            accountTransactions.forEach(transaction => {
+                transaction.lineItems
+                    .filter(item => item.accountId === accountId)
+                    .forEach(item => {
+                        const isDebitNormal = this.isDebitBalance(account.accountType);
+                        if (item.type === 'debit') {
+                            runningBalance += isDebitNormal ? item.amount : -item.amount;
+                        } else {
+                            runningBalance += isDebitNormal ? -item.amount : item.amount;
+                        }
+
+                        html += `
+                            <tr>
+                                <td>${this.formatDate(transaction.date)}</td>
+                                <td>${transaction.description || ''}</td>
+                                <td class="amount-cell">${item.type === 'debit' ? this.formatCurrency(item.amount) : ''}</td>
+                                <td class="amount-cell">${item.type === 'credit' ? this.formatCurrency(item.amount) : ''}</td>
+                                <td class="amount-cell">${this.formatCurrency(runningBalance)}</td>
+                            </tr>`;
+                    });
+            });
+
+            html += `
+                        </tbody>
+                    </table>
+                </div>`;
+        });
+
+        this.reportTable.innerHTML = html;
     }
 
     generateProfitLoss() {
@@ -1280,7 +1470,7 @@ class Reports {
         const balances = this.calculateAccountBalances(transactions);
         
         this.reportTitle.textContent = 'Profit & Loss Statement';
-        this.reportDate.textContent = `${new Date(this.startDate.value).toLocaleDateString()} - ${new Date(this.endDate.value).toLocaleDateString()}`;
+        this.reportDate.textContent = `${this.formatDate(this.startDate.value)} - ${this.formatDate(this.endDate.value)}`;
 
         let html = `
             <table>
@@ -1361,7 +1551,7 @@ class Reports {
         const balances = this.calculateAccountBalances(transactions);
         
         this.reportTitle.textContent = 'Trial Balance';
-        this.reportDate.textContent = `As of ${new Date(this.asOfDate.value).toLocaleDateString()}`;
+        this.reportDate.textContent = `As of ${this.formatDate(this.asOfDate.value)}`;
 
         let html = `
             <table>
@@ -1414,7 +1604,7 @@ class Reports {
         const transactions = this.getTransactionsInRange();
         
         this.reportTitle.textContent = 'General Ledger';
-        this.reportDate.textContent = `${new Date(this.startDate.value).toLocaleDateString()} - ${new Date(this.endDate.value).toLocaleDateString()}`;
+        this.reportDate.textContent = `${this.formatDate(this.startDate.value)} - ${this.formatDate(this.endDate.value)}`;
 
         let html = '';
         
@@ -1457,7 +1647,7 @@ class Reports {
 
                                     html += `
                                         <tr>
-                                            <td>${new Date(transaction.date).toLocaleDateString()}</td>
+                                            <td>${this.formatDate(transaction.date)}</td>
                                             <td>${transaction.description || ''}</td>
                                             <td class="amount-cell">${item.type === 'debit' ? this.formatCurrency(item.amount) : ''}</td>
                                             <td class="amount-cell">${item.type === 'credit' ? this.formatCurrency(item.amount) : ''}</td>
@@ -1497,14 +1687,20 @@ class Reports {
         const isSingleDate = this.usesSingleDate();
         
         return transactions.filter(t => {
-            const date = new Date(t.date);
+            const date = new Date(t.date + 'T00:00:00');
             if (isSingleDate) {
-                return date <= new Date(this.asOfDate.value);
+                return date <= new Date(this.asOfDate.value + 'T23:59:59');
             } else {
-                return date >= new Date(this.startDate.value) && 
-                       date <= new Date(this.endDate.value);
+                return date >= new Date(this.startDate.value + 'T00:00:00') && 
+                       date <= new Date(this.endDate.value + 'T23:59:59');
             }
         });
+    }
+
+    formatDate(dateString) {
+        // Add time component to ensure date is interpreted in local timezone
+        const date = new Date(dateString + 'T00:00:00');
+        return date.toLocaleDateString();
     }
 
     calculateAccountBalances(transactions) {
@@ -1545,6 +1741,12 @@ class Reports {
         ];
         return debitNormalTypes.includes(accountType);
         // Note: Liabilities, Equity, and Revenue have credit normal balances
+    }
+
+    formatDate(dateString) {
+        // Add time component to ensure date is interpreted in local timezone
+        const date = new Date(dateString + 'T00:00:00');
+        return date.toLocaleDateString();
     }
 
     formatCurrency(amount) {
