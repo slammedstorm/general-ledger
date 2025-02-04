@@ -757,12 +757,12 @@ class Investments {
         this.renderInvestments();
     }
 
-    generateEditingRow(account, transaction, shares, costPerShare, fmvPerShare, cost, fmv) {
+    generateEditingRow(account, transaction, shares, costPerShare, fmvPerShare, cost, fmv, details) {
         const row = document.createElement('tr');
         row.innerHTML = `
             <td><input type="text" class="edit-company" value="${account.name}"></td>
             <td>${new Date(transaction.date).toLocaleDateString()}</td>
-            <td>${account.accountType}</td>
+            <td><input type="text" class="edit-round" value="${details.round || ''}"></td>
             <td class="amount-cell"><input type="number" class="edit-shares" value="${shares}"></td>
             <td class="amount-cell">${this.formatCurrency(costPerShare)}</td>
             <td class="amount-cell"><input type="number" step="0.01" class="edit-fmv-per-share" value="${fmvPerShare}"></td>
@@ -817,6 +817,7 @@ class Investments {
 
     saveInvestmentEdit(row, account, transaction) {
         const newCompany = row.querySelector('.edit-company').value.trim();
+        const newRound = row.querySelector('.edit-round').value.trim();
         const newShares = parseFloat(row.querySelector('.edit-shares').value) || 0;
         const newFmvPerShare = parseFloat(row.querySelector('.edit-fmv-per-share').value) || 0;
         const newFmv = parseFloat(row.querySelector('.edit-fmv').value) || 0;
@@ -908,7 +909,8 @@ class Investments {
         storedDetails[account.id][transaction.date] = {
             shares: newShares,
             fmvPerShare: newFmvPerShare,
-            fmv: newFmv
+            fmv: newFmv,
+            round: newRound
         };
         localStorage.setItem('investmentDetails', JSON.stringify(storedDetails));
 
@@ -985,7 +987,8 @@ class Investments {
                         costPerShare, 
                         fmvPerShare, 
                         cost, 
-                        fmv
+                        fmv,
+                        details
                     );
                     this.investmentsBody.appendChild(row);
                 } else {
@@ -993,7 +996,7 @@ class Investments {
                     row.innerHTML = `
                         <td>${account.name}</td>
                         <td>${this.formatDate(transaction.date)}</td>
-                        <td>${account.accountType}</td>
+                        <td>${details.round || ''}</td>
                         <td class="amount-cell">${shares.toLocaleString()}</td>
                         <td class="amount-cell">${this.formatCurrency(costPerShare)}</td>
                         <td class="amount-cell">${this.formatCurrency(fmvPerShare)}</td>
@@ -1775,6 +1778,464 @@ function initializeTabs() {
     });
 }
 
+class Reconciliation {
+    constructor() {
+        this.bankAccountSelect = document.getElementById('bankAccountSelect');
+        this.startDate = document.getElementById('reconStartDate');
+        this.endDate = document.getElementById('reconEndDate');
+        this.bankTransactionsBody = document.getElementById('bankTransactionsBody');
+        this.bookEntriesBody = document.getElementById('bookEntriesBody');
+        this.importBankBtn = document.getElementById('importBankBtn');
+        this.exportTemplateBtn = document.getElementById('exportTemplateBtn');
+        this.bankTransactionFile = document.getElementById('bankTransactionFile');
+        
+        this.initializeEventListeners();
+        this.populateBankAccounts();
+    }
+
+    initializeEventListeners() {
+        this.exportTemplateBtn.addEventListener('click', () => {
+            this.exportTemplate();
+        });
+
+        this.importBankBtn.addEventListener('click', () => {
+            this.bankTransactionFile.click();
+        });
+
+        this.bankTransactionFile.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                this.handleFileImport(e.target.files[0]);
+            }
+        });
+
+        this.bankAccountSelect.addEventListener('change', () => {
+            this.loadUnreconciledEntries();
+        });
+
+        [this.startDate, this.endDate].forEach(input => {
+            input.addEventListener('change', () => {
+                if (this.bankAccountSelect.value) {
+                    this.loadUnreconciledEntries();
+                }
+            });
+        });
+    }
+
+    populateBankAccounts() {
+        const accounts = JSON.parse(localStorage.getItem('chartOfAccounts')) || [];
+        const bankAccounts = accounts.filter(account => account.accountType === 'Bank Account');
+        
+        this.bankAccountSelect.innerHTML = '<option value="">Select Bank Account</option>';
+        bankAccounts.forEach(account => {
+            const option = document.createElement('option');
+            option.value = account.id;
+            option.textContent = `${account.code} - ${account.name}`;
+            this.bankAccountSelect.appendChild(option);
+        });
+    }
+
+    exportTemplate() {
+        // Create example data
+        const data = [
+            ['Date', 'Amount', 'Description'],
+            ['02/01/2025', 1000.00, 'Customer Payment'],
+            ['02/02/2025', -50.00, 'Bank Fee'],
+            ['02/03/2025', -500.00, 'Vendor Payment']
+        ];
+
+        // Create workbook and worksheet
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet(data);
+
+        // Add column widths for better readability
+        ws['!cols'] = [
+            { wch: 12 }, // Date
+            { wch: 12 }, // Amount
+            { wch: 40 }  // Description
+        ];
+
+        // Add the worksheet to the workbook
+        XLSX.utils.book_append_sheet(wb, ws, 'Bank Transactions');
+
+        // Save the file
+        XLSX.writeFile(wb, 'bank_import_template.xlsx');
+    }
+
+    async handleFileImport(file) {
+        if (!this.bankAccountSelect.value) {
+            alert('Please select a bank account first');
+            return;
+        }
+
+        try {
+            const data = await this.readExcelFile(file);
+            if (!this.validateImportData(data)) {
+                alert('Invalid file format. The file must contain columns for Date, Amount, and Description.');
+                return;
+            }
+
+            const bankTransactions = this.processImportData(data);
+            await this.saveBankTransactions(bankTransactions);
+            await this.generateBookEntries(bankTransactions);
+            this.loadUnreconciledEntries();
+        } catch (error) {
+            console.error('Import error:', error);
+            alert('Error importing file: ' + error.message);
+        }
+    }
+
+    readExcelFile(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                    const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+                    resolve(jsonData);
+                } catch (error) {
+                    reject(error);
+                }
+            };
+            reader.onerror = reject;
+            reader.readAsArrayBuffer(file);
+        });
+    }
+
+    validateImportData(data) {
+        if (!data || data.length < 2) return false; // Need header row and at least one data row
+        
+        const headers = data[0].map(h => h.toLowerCase());
+        return headers.includes('date') && 
+               headers.includes('amount') && 
+               headers.includes('description');
+    }
+
+    processImportData(data) {
+        const headers = data[0].map(h => h.toLowerCase());
+        const dateIndex = headers.indexOf('date');
+        const amountIndex = headers.indexOf('amount');
+        const descriptionIndex = headers.indexOf('description');
+
+        return data.slice(1)
+            .filter(row => {
+                // Skip rows where required fields are missing
+                if (!row[dateIndex] || !row[amountIndex]) {
+                    return false;
+                }
+                // Skip rows where amount is not a valid number
+                const amount = parseFloat(row[amountIndex]);
+                if (isNaN(amount)) {
+                    return false;
+                }
+                return true;
+            })
+            .map(row => {
+                try {
+                    return {
+                        date: this.parseExcelDate(row[dateIndex]),
+                        amount: parseFloat(row[amountIndex]),
+                        description: row[descriptionIndex] || '',
+                        bankAccountId: this.bankAccountSelect.value,
+                        imported: true,
+                        id: Date.now() + Math.random()
+                    };
+                } catch (error) {
+                    console.error('Error processing row:', row, error);
+                    return null;
+                }
+            })
+            .filter(transaction => transaction !== null);
+    }
+
+    parseExcelDate(value) {
+        let date;
+        
+        if (!value) {
+            throw new Error('Date is required');
+        }
+
+        try {
+            // Handle Excel date serial numbers
+            if (typeof value === 'number') {
+                date = new Date(Math.round((value - 25569) * 86400 * 1000));
+            } else if (typeof value === 'string') {
+                // Handle string dates in MM/DD/YYYY format
+                const parts = value.split('/');
+                if (parts.length === 3) {
+                    // parts[0] is month, parts[1] is day, parts[2] is year
+                    const month = parseInt(parts[0], 10) - 1;
+                    const day = parseInt(parts[1], 10);
+                    const year = parseInt(parts[2], 10);
+                    
+                    // Validate parts
+                    if (isNaN(month) || isNaN(day) || isNaN(year)) {
+                        throw new Error('Invalid date components');
+                    }
+                    
+                    date = new Date(year, month, day);
+                } else {
+                    // Try parsing as a regular date string
+                    date = new Date(value);
+                }
+            } else {
+                throw new Error('Invalid date value type');
+            }
+            
+            // Validate the date
+            if (isNaN(date.getTime())) {
+                throw new Error('Invalid date');
+            }
+            
+            // Return in YYYY-MM-DD format for storage
+            return date.toISOString().split('T')[0];
+        } catch (error) {
+            throw new Error(`Invalid date format. Please use MM/DD/YYYY format. Error: ${error.message}`);
+        }
+    }
+
+    saveBankTransactions(transactions) {
+        const existingTransactions = JSON.parse(localStorage.getItem('bankTransactions')) || [];
+        const newTransactions = [...existingTransactions, ...transactions];
+        localStorage.setItem('bankTransactions', JSON.stringify(newTransactions));
+    }
+
+    async generateBookEntries(bankTransactions) {
+        const bookEntries = JSON.parse(localStorage.getItem('bookEntries')) || [];
+        const newEntries = bankTransactions.map(transaction => ({
+            id: Date.now() + Math.random(),
+            date: transaction.date,
+            description: transaction.description,
+            bankAccountId: transaction.bankAccountId,
+            amount: transaction.amount,
+            bankTransactionId: transaction.id,
+            status: 'pending',
+            accountId: '', // To be filled by user
+            reconciled: false
+        }));
+        
+        bookEntries.push(...newEntries);
+        localStorage.setItem('bookEntries', JSON.stringify(bookEntries));
+    }
+
+    loadUnreconciledEntries() {
+        const accountId = this.bankAccountSelect.value;
+        if (!accountId) return;
+
+        const bankTransactions = JSON.parse(localStorage.getItem('bankTransactions')) || [];
+        const bookEntries = JSON.parse(localStorage.getItem('bookEntries')) || [];
+        const reconciledEntries = JSON.parse(localStorage.getItem('reconciledEntries')) || {};
+        
+        // Filter by date range if provided
+        const startDate = this.startDate.value ? new Date(this.startDate.value) : null;
+        const endDate = this.endDate.value ? new Date(this.endDate.value) : null;
+
+        // Filter bank transactions
+        const unreconciledBankTransactions = bankTransactions
+            .filter(transaction => {
+                const transactionDate = new Date(transaction.date);
+                const withinDateRange = (!startDate || transactionDate >= startDate) && 
+                                      (!endDate || transactionDate <= endDate);
+                
+                return transaction.bankAccountId === accountId && 
+                       !reconciledEntries[transaction.id] &&
+                       withinDateRange;
+            })
+            .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+        // Filter book entries
+        const unreconciledBookEntries = bookEntries
+            .filter(entry => {
+                const entryDate = new Date(entry.date);
+                const withinDateRange = (!startDate || entryDate >= startDate) && 
+                                      (!endDate || entryDate <= endDate);
+                
+                return entry.bankAccountId === accountId && 
+                       !reconciledEntries[entry.id] &&
+                       withinDateRange;
+            })
+            .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+        this.renderBankTransactions(unreconciledBankTransactions);
+        this.renderBookEntries(unreconciledBookEntries);
+    }
+
+    renderBankTransactions(transactions) {
+        this.bankTransactionsBody.innerHTML = '';
+        
+        transactions.forEach(transaction => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${this.formatDate(transaction.date)}</td>
+                <td>${transaction.description || ''}</td>
+                <td class="amount-cell">${this.formatCurrency(transaction.amount)}</td>
+                <td>
+                    <button class="reconcile-btn" data-transaction-id="${transaction.id}">Reconcile</button>
+                </td>
+            `;
+
+            row.querySelector('.reconcile-btn').addEventListener('click', () => {
+                this.reconcileEntry(transaction.id, 'bank');
+            });
+
+            this.bankTransactionsBody.appendChild(row);
+        });
+    }
+
+    renderBookEntries(entries) {
+        this.bookEntriesBody.innerHTML = '';
+        const accounts = JSON.parse(localStorage.getItem('chartOfAccounts')) || [];
+        
+        entries.forEach(entry => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${this.formatDate(entry.date)}</td>
+                <td>
+                    <input type="text" class="description-input" value="${entry.description || ''}" ${entry.reconciled ? 'disabled' : ''}>
+                </td>
+                <td>
+                    <select class="account-select" data-entry-id="${entry.id}" ${entry.reconciled ? 'disabled' : ''}>
+                        <option value="">Select Account</option>
+                        ${this.generateAccountOptions(accounts, entry.accountId)}
+                    </select>
+                </td>
+                <td class="amount-cell">${this.formatCurrency(entry.amount)}</td>
+                <td>
+                    ${entry.reconciled ? 
+                        '<span class="reconciled-status">Reconciled</span>' :
+                        `<button class="reconcile-btn" data-entry-id="${entry.id}">Reconcile</button>`
+                    }
+                </td>
+            `;
+
+            // Add event listeners
+            const accountSelect = row.querySelector('.account-select');
+            const descriptionInput = row.querySelector('.description-input');
+
+            accountSelect.addEventListener('change', () => {
+                this.updateBookEntry(entry.id, { accountId: accountSelect.value });
+            });
+
+            descriptionInput.addEventListener('change', () => {
+                this.updateBookEntry(entry.id, { description: descriptionInput.value });
+            });
+
+            const reconcileBtn = row.querySelector('.reconcile-btn');
+            if (reconcileBtn) {
+                reconcileBtn.addEventListener('click', () => {
+                    if (!accountSelect.value) {
+                        alert('Please select an account before reconciling');
+                        return;
+                    }
+                    this.reconcileEntry(entry.id);
+                });
+            }
+
+            this.bookEntriesBody.appendChild(row);
+        });
+    }
+
+    generateAccountOptions(accounts, selectedId = '') {
+        const accountsByType = accounts.reduce((acc, account) => {
+            if (!acc[account.accountType]) {
+                acc[account.accountType] = [];
+            }
+            acc[account.accountType].push(account);
+            return acc;
+        }, {});
+
+        let options = '';
+        Object.entries(accountsByType).forEach(([type, accounts]) => {
+            options += `<optgroup label="${type}">`;
+            accounts.forEach(account => {
+                options += `
+                    <option value="${account.id}" ${account.id.toString() === selectedId ? 'selected' : ''}>
+                        ${account.code} - ${account.name}
+                    </option>`;
+            });
+            options += '</optgroup>';
+        });
+        return options;
+    }
+
+    updateBookEntry(entryId, updates) {
+        const bookEntries = JSON.parse(localStorage.getItem('bookEntries')) || [];
+        const index = bookEntries.findIndex(entry => entry.id === entryId);
+        if (index !== -1) {
+            bookEntries[index] = { ...bookEntries[index], ...updates };
+            localStorage.setItem('bookEntries', JSON.stringify(bookEntries));
+        }
+    }
+
+    reconcileEntry(entryId) {
+        const reconciledEntries = JSON.parse(localStorage.getItem('reconciledEntries')) || {};
+        reconciledEntries[entryId] = {
+            date: new Date().toISOString(),
+            bankAccountId: this.bankAccountSelect.value
+        };
+
+        // Create journal entry if this is a book entry
+        const bookEntries = JSON.parse(localStorage.getItem('bookEntries')) || [];
+        const bookEntry = bookEntries.find(entry => entry.id === entryId);
+        if (bookEntry && bookEntry.accountId) {
+            const journalEntries = JSON.parse(localStorage.getItem('journalEntries')) || [];
+            const newEntry = {
+                date: bookEntry.date,
+                description: bookEntry.description,
+                lineItems: [
+                    {
+                        accountId: this.bankAccountSelect.value,
+                        accountName: this.getAccountName(this.bankAccountSelect.value),
+                        accountType: 'Bank Account',
+                        description: bookEntry.description,
+                        type: bookEntry.amount > 0 ? 'debit' : 'credit',
+                        amount: Math.abs(bookEntry.amount)
+                    },
+                    {
+                        accountId: bookEntry.accountId,
+                        accountName: this.getAccountName(bookEntry.accountId),
+                        accountType: this.getAccountType(bookEntry.accountId),
+                        description: bookEntry.description,
+                        type: bookEntry.amount > 0 ? 'credit' : 'debit',
+                        amount: Math.abs(bookEntry.amount)
+                    }
+                ],
+                id: Date.now()
+            };
+            journalEntries.push(newEntry);
+            localStorage.setItem('journalEntries', JSON.stringify(journalEntries));
+        }
+
+        localStorage.setItem('reconciledEntries', JSON.stringify(reconciledEntries));
+        this.loadUnreconciledEntries();
+    }
+
+    getAccountName(accountId) {
+        const accounts = JSON.parse(localStorage.getItem('chartOfAccounts')) || [];
+        const account = accounts.find(a => a.id.toString() === accountId);
+        return account ? `${account.code} - ${account.name}` : '';
+    }
+
+    getAccountType(accountId) {
+        const accounts = JSON.parse(localStorage.getItem('chartOfAccounts')) || [];
+        const account = accounts.find(a => a.id.toString() === accountId);
+        return account ? account.accountType : '';
+    }
+
+    formatDate(dateString) {
+        const date = new Date(dateString + 'T00:00:00');
+        return date.toLocaleDateString();
+    }
+
+    formatCurrency(amount) {
+        return new Intl.NumberFormat('en-US', {
+            style: 'currency',
+            currency: 'USD'
+        }).format(amount);
+    }
+}
+
 // Initialize the application when the page loads
 document.addEventListener('DOMContentLoaded', () => {
     const chartOfAccounts = new ChartOfAccounts();
@@ -1813,4 +2274,5 @@ document.addEventListener('DOMContentLoaded', () => {
     new Reports();
     new Investments();
     initializeTabs();
+    new Reconciliation();
 });
