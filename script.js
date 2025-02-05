@@ -416,22 +416,7 @@ class GeneralLedger {
     }
 
     addTransaction() {
-        const debitTotal = this.calculateTotal('debit');
-        const creditTotal = this.calculateTotal('credit');
-
-        if (debitTotal !== creditTotal) {
-            document.getElementById('balance-error').style.display = 'block';
-            return;
-        }
-
-        // Determine if this is a bank transaction
         const lineItems = Array.from(this.lineItemsContainer.children);
-        const hasBankAccount = lineItems.some(lineItem => {
-            const accountSelect = lineItem.querySelector('.account-select');
-            const account = this.getAccountById(accountSelect.value);
-            return account && account.accountType === 'Bank Account';
-        });
-
         const lineItemsData = lineItems.map(lineItem => {
             const accountSelect = lineItem.querySelector('.account-select');
             const account = this.getAccountById(accountSelect.value);
@@ -447,6 +432,58 @@ class GeneralLedger {
                 amount: debitAmount > 0 ? debitAmount : creditAmount
             };
         }).filter(item => item.amount > 0);
+
+        // Check if this is an investment transaction
+        const hasInvestment = lineItemsData.some(item => {
+            const account = this.getAccountById(item.accountId);
+            return account && account.accountType === 'Investment';
+        });
+
+        if (hasInvestment) {
+            // For investment transactions, only keep the investment side
+            const investmentItem = lineItemsData.find(item => {
+                const account = this.getAccountById(item.accountId);
+                return account && account.accountType === 'Investment';
+            });
+
+            if (!investmentItem) {
+                document.getElementById('balance-error').style.display = 'block';
+                return;
+            }
+
+            const transaction = {
+                date: document.getElementById('date').value,
+                description: document.getElementById('description').value,
+                lineItems: [investmentItem],
+                id: Date.now(),
+                transactionType: 'investment',
+                reconciled: false
+            };
+
+            this.transactions.push(transaction);
+            this.saveToLocalStorage();
+            this.renderLedger();
+            this.form.reset();
+            this.lineItemsContainer.innerHTML = '';
+            this.addLineItemRow();
+            this.updateTotals();
+            return;
+        }
+
+        // For non-investment transactions, proceed with normal validation
+        const debitTotal = this.calculateTotal('debit');
+        const creditTotal = this.calculateTotal('credit');
+
+        if (debitTotal !== creditTotal) {
+            document.getElementById('balance-error').style.display = 'block';
+            return;
+        }
+
+        // Determine if this is a bank transaction
+        const hasBankAccount = lineItemsData.some(item => {
+            const account = this.getAccountById(item.accountId);
+            return account && account.accountType === 'Bank Account';
+        });
 
         const transaction = {
             date: document.getElementById('date').value,
@@ -862,11 +899,8 @@ class Investments {
                 chartOfAccounts.push(newAccount, mtmAccount);
                 localStorage.setItem('chartOfAccounts', JSON.stringify(chartOfAccounts));
 
-                // Create initial transaction using the selected date
+                // Create initial transaction using the selected date - only investment side
                 const journalEntries = JSON.parse(localStorage.getItem('journalEntries')) || [];
-                const bankAccounts = chartOfAccounts.filter(a => a.accountType === 'Bank Account');
-                const defaultBankAccount = bankAccounts[0]; // Use first bank account as default
-                
                 const transaction = {
                     date: date,
                     description: `Initial investment in ${name} - ${round}`,
@@ -878,33 +912,14 @@ class Investments {
                             description: `Initial investment - ${round}`,
                             type: 'debit',
                             amount: costBasis
-                        },
-                        {
-                            accountId: defaultBankAccount.id.toString(),
-                            accountName: `${defaultBankAccount.code} - ${defaultBankAccount.name}`,
-                            accountType: 'Bank Account',
-                            description: `Initial investment in ${name}`,
-                            type: 'credit',
-                            amount: costBasis
                         }
                     ],
-                    id: Date.now()
+                    id: Date.now(),
+                    transactionType: 'investment',
+                    reconciled: false
                 };
                 journalEntries.push(transaction);
                 localStorage.setItem('journalEntries', JSON.stringify(journalEntries));
-
-                // Create bank transaction for reconciliation
-                const bankTransactions = JSON.parse(localStorage.getItem('bankTransactions')) || [];
-                const bankTransaction = {
-                    date: date,
-                    amount: -costBasis, // Negative since it's an outflow
-                    description: `Initial investment in ${name} - ${round}`,
-                    bankAccountId: defaultBankAccount.id.toString(),
-                    imported: false,
-                    id: transaction.id // Use same ID as journal entry for easy reconciliation
-                };
-                bankTransactions.push(bankTransaction);
-                localStorage.setItem('bankTransactions', JSON.stringify(bankTransactions));
 
                 // Store investment details
                 const investmentDetails = JSON.parse(localStorage.getItem('investmentDetails')) || {};
