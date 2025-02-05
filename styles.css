@@ -303,6 +303,32 @@ th {
     text-align: right;
 }
 
+/* Transaction Type and Status Styles */
+.transaction-type {
+    text-transform: capitalize;
+    font-weight: 500;
+}
+
+.transaction-type.bank {
+    color: #007bff;
+}
+
+.transaction-type.business {
+    color: #28a745;
+}
+
+.transaction-status {
+    font-weight: 500;
+}
+
+.transaction-status.reconciled {
+    color: #28a745;
+}
+
+.transaction-status.unreconciled {
+    color: #dc3545;
+}
+
 /* Error Messages */
 .error-message {
     color: #dc3545;

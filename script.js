@@ -424,7 +424,15 @@ class GeneralLedger {
             return;
         }
 
-        const lineItems = Array.from(this.lineItemsContainer.children).map(lineItem => {
+        // Determine if this is a bank transaction
+        const lineItems = Array.from(this.lineItemsContainer.children);
+        const hasBankAccount = lineItems.some(lineItem => {
+            const accountSelect = lineItem.querySelector('.account-select');
+            const account = this.getAccountById(accountSelect.value);
+            return account && account.accountType === 'Bank Account';
+        });
+
+        const lineItemsData = lineItems.map(lineItem => {
             const accountSelect = lineItem.querySelector('.account-select');
             const account = this.getAccountById(accountSelect.value);
             const debitAmount = parseFloat(lineItem.querySelector('.debit-input').value) || 0;
@@ -443,9 +451,32 @@ class GeneralLedger {
         const transaction = {
             date: document.getElementById('date').value,
             description: document.getElementById('description').value,
-            lineItems: lineItems,
-            id: Date.now()
+            lineItems: lineItemsData,
+            id: Date.now(),
+            transactionType: hasBankAccount ? 'bank' : 'business',
+            reconciled: false
         };
+
+        // If this is a bank transaction, create corresponding bank transaction record
+        if (hasBankAccount) {
+            const bankLineItem = lineItemsData.find(item => 
+                this.getAccountById(item.accountId).accountType === 'Bank Account'
+            );
+            
+            if (bankLineItem) {
+                const bankTransactions = JSON.parse(localStorage.getItem('bankTransactions')) || [];
+                const bankTransaction = {
+                    date: transaction.date,
+                    amount: bankLineItem.type === 'debit' ? bankLineItem.amount : -bankLineItem.amount,
+                    description: transaction.description,
+                    bankAccountId: bankLineItem.accountId,
+                    imported: false,
+                    id: transaction.id // Use same ID for easy reconciliation
+                };
+                bankTransactions.push(bankTransaction);
+                localStorage.setItem('bankTransactions', JSON.stringify(bankTransactions));
+            }
+        }
 
         this.transactions.push(transaction);
         this.saveToLocalStorage();
@@ -833,6 +864,9 @@ class Investments {
 
                 // Create initial transaction using the selected date
                 const journalEntries = JSON.parse(localStorage.getItem('journalEntries')) || [];
+                const bankAccounts = chartOfAccounts.filter(a => a.accountType === 'Bank Account');
+                const defaultBankAccount = bankAccounts[0]; // Use first bank account as default
+                
                 const transaction = {
                     date: date,
                     description: `Initial investment in ${name} - ${round}`,
@@ -846,8 +880,8 @@ class Investments {
                             amount: costBasis
                         },
                         {
-                            accountId: 'CASH',
-                            accountName: 'Cash',
+                            accountId: defaultBankAccount.id.toString(),
+                            accountName: `${defaultBankAccount.code} - ${defaultBankAccount.name}`,
                             accountType: 'Bank Account',
                             description: `Initial investment in ${name}`,
                             type: 'credit',
@@ -858,6 +892,19 @@ class Investments {
                 };
                 journalEntries.push(transaction);
                 localStorage.setItem('journalEntries', JSON.stringify(journalEntries));
+
+                // Create bank transaction for reconciliation
+                const bankTransactions = JSON.parse(localStorage.getItem('bankTransactions')) || [];
+                const bankTransaction = {
+                    date: date,
+                    amount: -costBasis, // Negative since it's an outflow
+                    description: `Initial investment in ${name} - ${round}`,
+                    bankAccountId: defaultBankAccount.id.toString(),
+                    imported: false,
+                    id: transaction.id // Use same ID as journal entry for easy reconciliation
+                };
+                bankTransactions.push(bankTransaction);
+                localStorage.setItem('bankTransactions', JSON.stringify(bankTransactions));
 
                 // Store investment details
                 const investmentDetails = JSON.parse(localStorage.getItem('investmentDetails')) || {};
@@ -2470,7 +2517,9 @@ class Reconciliation {
                     amount: Math.abs(transaction.amount)
                 }
             ],
-            id: Date.now()
+            id: transaction.id, // Use same ID as bank transaction for reconciliation
+            transactionType: 'bank',
+            reconciled: true
         };
         journalEntries.push(newEntry);
         localStorage.setItem('journalEntries', JSON.stringify(journalEntries));
@@ -2512,13 +2561,22 @@ class Reconciliation {
 
     reconcileEntry(entryId) {
         const reconciledEntries = JSON.parse(localStorage.getItem('reconciledEntries')) || {};
+        const journalEntries = JSON.parse(localStorage.getItem('journalEntries')) || [];
+        
+        // Mark bank transaction as reconciled
         reconciledEntries[entryId] = {
             date: new Date().toISOString(),
             bankAccountId: this.bankAccountSelect.value
         };
-
-
         localStorage.setItem('reconciledEntries', JSON.stringify(reconciledEntries));
+
+        // Mark corresponding journal entry as reconciled
+        const journalEntry = journalEntries.find(entry => entry.id === entryId);
+        if (journalEntry) {
+            journalEntry.reconciled = true;
+            localStorage.setItem('journalEntries', JSON.stringify(journalEntries));
+        }
+
         this.loadUnreconciledEntries();
     }
 
