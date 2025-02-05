@@ -746,18 +746,128 @@ class Investments {
             const unrealizedGainLoss = fmv - cost;
 
             const row = document.createElement('tr');
-            row.innerHTML = `
-                <td>${details.round || ''}</td>
-                <td>${this.formatDate(transaction.date)}</td>
-                <td class="amount-cell">${shares ? shares.toLocaleString() : ''}</td>
-                <td class="amount-cell">${costPerShare ? this.formatCurrency(costPerShare) : ''}</td>
-                <td class="amount-cell">${fmvPerShare ? this.formatCurrency(fmvPerShare) : ''}</td>
-                <td class="amount-cell">${this.formatCurrency(cost)}</td>
-                <td class="amount-cell">${this.formatCurrency(fmv)}</td>
-                <td class="amount-cell ${unrealizedGainLoss >= 0 ? 'positive' : 'negative'}">
-                    ${this.formatCurrency(unrealizedGainLoss)}
-                </td>
-            `;
+            const isEditing = this.editingRowId === `${account.id}-${transaction.date}`;
+            
+            if (isEditing) {
+                row.innerHTML = `
+                    <td>
+                        <select class="edit-round">
+                            <option value="SAFE" ${details.round === "SAFE" ? "selected" : ""}>SAFE</option>
+                            <option value="Series Seed Preferred" ${details.round === "Series Seed Preferred" ? "selected" : ""}>Series Seed Preferred</option>
+                            <option value="Series A Preferred" ${details.round === "Series A Preferred" ? "selected" : ""}>Series A Preferred</option>
+                            <option value="Series B Preferred" ${details.round === "Series B Preferred" ? "selected" : ""}>Series B Preferred</option>
+                            <option value="Series C Preferred" ${details.round === "Series C Preferred" ? "selected" : ""}>Series C Preferred</option>
+                            <option value="Convertible Note" ${details.round === "Convertible Note" ? "selected" : ""}>Convertible Note</option>
+                        </select>
+                    </td>
+                    <td>${this.formatDate(transaction.date)}</td>
+                    <td class="amount-cell">
+                        <input type="number" class="edit-shares" value="${shares || ''}" step="1">
+                    </td>
+                    <td class="amount-cell">${costPerShare ? this.formatCurrency(costPerShare) : ''}</td>
+                    <td class="amount-cell">
+                        <input type="number" class="edit-fmv-per-share" value="${fmvPerShare || ''}" step="0.01">
+                    </td>
+                    <td class="amount-cell">${this.formatCurrency(cost)}</td>
+                    <td class="amount-cell">
+                        <input type="number" class="edit-fmv" value="${fmv}" step="0.01">
+                    </td>
+                    <td class="amount-cell ${unrealizedGainLoss >= 0 ? 'positive' : 'negative'}">
+                        ${this.formatCurrency(unrealizedGainLoss)}
+                    </td>
+                    <td>
+                        <button class="save-btn">Save</button>
+                        <button class="cancel-btn">Cancel</button>
+                    </td>
+                `;
+
+                // Add event listeners for automatic calculations
+                const sharesInput = row.querySelector('.edit-shares');
+                const fmvPerShareInput = row.querySelector('.edit-fmv-per-share');
+                const fmvInput = row.querySelector('.edit-fmv');
+
+                sharesInput.addEventListener('input', () => {
+                    const shares = parseFloat(sharesInput.value);
+                    if (!shares || shares === 0) {
+                        fmvPerShareInput.value = '';
+                        fmvInput.value = cost.toFixed(2);
+                    } else {
+                        const fmvPerShare = parseFloat(fmvPerShareInput.value) || 0;
+                        fmvInput.value = (shares * fmvPerShare).toFixed(2);
+                    }
+                });
+
+                fmvPerShareInput.addEventListener('input', () => {
+                    const shares = parseFloat(sharesInput.value);
+                    if (!shares || shares === 0) {
+                        fmvInput.value = cost.toFixed(2);
+                    } else {
+                        const fmvPerShare = parseFloat(fmvPerShareInput.value) || 0;
+                        fmvInput.value = (shares * fmvPerShare).toFixed(2);
+                    }
+                });
+
+                fmvInput.addEventListener('input', () => {
+                    const shares = parseFloat(sharesInput.value);
+                    if (!shares || shares === 0) {
+                        fmvPerShareInput.value = '';
+                    } else {
+                        const fmv = parseFloat(fmvInput.value) || 0;
+                        fmvPerShareInput.value = (fmv / shares).toFixed(2);
+                    }
+                });
+
+                // Add save and cancel handlers
+                row.querySelector('.save-btn').addEventListener('click', () => {
+                    const newDetails = {
+                        round: row.querySelector('.edit-round').value,
+                        shares: parseFloat(row.querySelector('.edit-shares').value) || null,
+                        fmvPerShare: parseFloat(row.querySelector('.edit-fmv-per-share').value) || null,
+                        fmv: parseFloat(row.querySelector('.edit-fmv').value) || cost
+                    };
+
+                    if (!investmentDetails[account.id]) {
+                        investmentDetails[account.id] = {};
+                    }
+                    investmentDetails[account.id][transaction.date] = newDetails;
+
+                    // Save to localStorage
+                    localStorage.setItem('investmentDetails', JSON.stringify(investmentDetails));
+
+                    // Reset editing state
+                    this.editingRowId = null;
+
+                    // Update the display
+                    this.showCompanyDetails(account);
+                });
+
+                row.querySelector('.cancel-btn').addEventListener('click', () => {
+                    this.editingRowId = null;
+                    this.showCompanyDetails(account);
+                });
+            } else {
+                row.innerHTML = `
+                    <td>${details.round || ''}</td>
+                    <td>${this.formatDate(transaction.date)}</td>
+                    <td class="amount-cell">${shares ? shares.toLocaleString() : ''}</td>
+                    <td class="amount-cell">${costPerShare ? this.formatCurrency(costPerShare) : ''}</td>
+                    <td class="amount-cell">${fmvPerShare ? this.formatCurrency(fmvPerShare) : ''}</td>
+                    <td class="amount-cell">${this.formatCurrency(cost)}</td>
+                    <td class="amount-cell">${this.formatCurrency(fmv)}</td>
+                    <td class="amount-cell ${unrealizedGainLoss >= 0 ? 'positive' : 'negative'}">
+                        ${this.formatCurrency(unrealizedGainLoss)}
+                    </td>
+                    <td>
+                        <button class="edit-btn">Edit</button>
+                    </td>
+                `;
+
+                // Add edit handler
+                row.querySelector('.edit-btn').addEventListener('click', () => {
+                    this.editingRowId = `${account.id}-${transaction.date}`;
+                    this.showCompanyDetails(account);
+                });
+            }
             
             document.getElementById('companyDetailsBody').appendChild(row);
         });

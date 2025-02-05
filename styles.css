@@ -733,3 +733,57 @@ th {
 #investmentsTable tr:hover {
     background-color: #f5f5f5;
 }
+
+/* Modal Row Edit Styles */
+#companyDetailsTable input[type="number"],
+#companyDetailsTable select {
+    width: 100%;
+    padding: 4px 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+#companyDetailsTable .edit-btn {
+    padding: 4px 8px;
+    font-size: 12px;
+    background-color: #6c757d;
+}
+
+#companyDetailsTable .edit-btn:hover {
+    background-color: #5a6268;
+}
+
+#companyDetailsTable .save-btn {
+    padding: 4px 8px;
+    font-size: 12px;
+    background-color: #28a745;
+}
+
+#companyDetailsTable .save-btn:hover {
+    background-color: #218838;
+}
+
+#companyDetailsTable .cancel-btn {
+    padding: 4px 8px;
+    font-size: 12px;
+    background-color: #dc3545;
+}
+
+#companyDetailsTable .cancel-btn:hover {
+    background-color: #c82333;
+}
+
+#companyDetailsTable tr.editing input[type="number"],
+#companyDetailsTable tr.editing select {
+    width: 100%;
+    min-width: 80px;
+}
+
+#companyDetailsTable tr.editing td {
+    padding: 8px;
+}
+
+#companyDetailsTable tr.editing .amount-cell {
+    min-width: 120px;
+}
