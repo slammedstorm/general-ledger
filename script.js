@@ -2473,11 +2473,29 @@ class Reconciliation {
                 <td class="amount-cell">${this.formatCurrency(transaction.amount)}</td>
                 <td>
                     <div class="reconcile-controls" style="display: flex; gap: 10px; align-items: center;">
-                        <select class="account-select" style="display: none;">
-                            <option value="">Select Account</option>
-                            ${this.generateAccountOptions(accounts)}
-                        </select>
-                        <button class="confirm-btn" style="display: none;">Confirm</button>
+                        <div class="reconcile-options" style="display: none;">
+                            <div style="margin-bottom: 10px;">
+                                <label>
+                                    <input type="radio" name="reconcile-type-${transaction.id}" value="new" checked> Create New Entry
+                                </label>
+                                <label style="margin-left: 10px;">
+                                    <input type="radio" name="reconcile-type-${transaction.id}" value="existing"> Match Existing Entry
+                                </label>
+                            </div>
+                            <div class="new-entry-controls">
+                                <select class="account-select">
+                                    <option value="">Select Account</option>
+                                    ${this.generateAccountOptions(accounts)}
+                                </select>
+                            </div>
+                            <div class="existing-entry-controls" style="display: none;">
+                                <select class="transaction-select">
+                                    <option value="">Select Transaction</option>
+                                    ${this.generateTransactionOptions(transaction)}
+                                </select>
+                            </div>
+                            <button class="confirm-btn" style="margin-top: 10px;">Confirm</button>
+                        </div>
                         <button class="reconcile-btn">Reconcile</button>
                         <button class="delete-btn" style="margin-left: 10px;">Delete</button>
                     </div>
@@ -2487,23 +2505,48 @@ class Reconciliation {
             // Add click handlers
             const reconcileControls = row.querySelector('.reconcile-controls');
             const reconcileBtn = row.querySelector('.reconcile-btn');
+            const reconcileOptions = row.querySelector('.reconcile-options');
+            const newEntryControls = row.querySelector('.new-entry-controls');
+            const existingEntryControls = row.querySelector('.existing-entry-controls');
             const accountSelect = row.querySelector('.account-select');
+            const transactionSelect = row.querySelector('.transaction-select');
             const confirmBtn = row.querySelector('.confirm-btn');
             const deleteBtn = row.querySelector('.delete-btn');
+            const radioButtons = row.querySelectorAll('input[type="radio"]');
             
             reconcileBtn.addEventListener('click', () => {
-                // Show account select and confirm button
-                accountSelect.style.display = 'inline-block';
-                confirmBtn.style.display = 'inline-block';
+                reconcileOptions.style.display = 'block';
                 reconcileBtn.style.display = 'none';
+            });
+
+            radioButtons.forEach(radio => {
+                radio.addEventListener('change', () => {
+                    if (radio.value === 'new') {
+                        newEntryControls.style.display = 'block';
+                        existingEntryControls.style.display = 'none';
+                    } else {
+                        newEntryControls.style.display = 'none';
+                        existingEntryControls.style.display = 'block';
+                    }
+                });
             });
             
             confirmBtn.addEventListener('click', () => {
-                if (!accountSelect.value) {
-                    alert('Please select an account first');
-                    return;
+                const selectedType = row.querySelector('input[name="reconcile-type-' + transaction.id + '"]:checked').value;
+                
+                if (selectedType === 'new') {
+                    if (!accountSelect.value) {
+                        alert('Please select an account');
+                        return;
+                    }
+                    this.reconcileTransaction(transaction, accountSelect.value);
+                } else {
+                    if (!transactionSelect.value) {
+                        alert('Please select a transaction');
+                        return;
+                    }
+                    this.reconcileWithExisting(transaction, transactionSelect.value);
                 }
-                this.reconcileTransaction(transaction, accountSelect.value);
             });
 
             deleteBtn.addEventListener('click', () => {
@@ -2514,6 +2557,88 @@ class Reconciliation {
             
             this.bankTransactionsBody.appendChild(row);
         });
+    }
+
+    generateTransactionOptions(bankTransaction) {
+        const journalEntries = JSON.parse(localStorage.getItem('journalEntries')) || [];
+        const reconciledEntries = JSON.parse(localStorage.getItem('reconciledEntries')) || {};
+        
+        // Get unreconciled business transactions
+        const unreconciledTransactions = journalEntries.filter(entry => 
+            !entry.reconciled && 
+            entry.transactionType !== 'bank' &&
+            entry.transactionType !== 'investment' &&
+            // Match amount (considering debit/credit)
+            entry.lineItems.some(item => {
+                const itemAmount = item.type === 'debit' ? item.amount : -item.amount;
+                return Math.abs(itemAmount - bankTransaction.amount) < 0.01;
+            })
+        );
+
+        let options = '';
+        unreconciledTransactions.forEach(entry => {
+            options += `
+                <option value="${entry.id}">
+                    ${this.formatDate(entry.date)} - ${entry.description || 'No description'} 
+                    (${this.formatCurrency(Math.abs(bankTransaction.amount))})
+                </option>`;
+        });
+        return options;
+    }
+
+    reconcileWithExisting(bankTransaction, journalEntryId) {
+        const journalEntries = JSON.parse(localStorage.getItem('journalEntries')) || [];
+        const existingEntry = journalEntries.find(entry => entry.id.toString() === journalEntryId);
+        
+        if (!existingEntry) {
+            alert('Selected transaction not found');
+            return;
+        }
+
+        // Create bank side of the entry
+        const newEntry = {
+            date: bankTransaction.date,
+            description: bankTransaction.description || existingEntry.description,
+            lineItems: [
+                {
+                    accountId: this.bankAccountSelect.value,
+                    accountName: this.getAccountName(this.bankAccountSelect.value),
+                    accountType: 'Bank Account',
+                    description: bankTransaction.description || existingEntry.description,
+                    type: bankTransaction.amount > 0 ? 'debit' : 'credit',
+                    amount: Math.abs(bankTransaction.amount)
+                }
+            ],
+            id: bankTransaction.id,
+            transactionType: 'bank',
+            reconciled: true
+        };
+
+        // Add matching line items from existing entry
+        existingEntry.lineItems.forEach(item => {
+            if (item.accountType !== 'Bank Account') {
+                newEntry.lineItems.push({
+                    ...item,
+                    description: bankTransaction.description || item.description
+                });
+            }
+        });
+
+        // Mark existing entry as reconciled
+        existingEntry.reconciled = true;
+
+        // Update journal entries
+        const updatedEntries = journalEntries.map(entry => 
+            entry.id === existingEntry.id ? existingEntry : entry
+        );
+        updatedEntries.push(newEntry);
+        localStorage.setItem('journalEntries', JSON.stringify(updatedEntries));
+
+        // Mark as reconciled
+        this.reconcileEntry(bankTransaction.id);
+        
+        // Refresh the view
+        this.loadUnreconciledEntries();
     }
 
     reconcileTransaction(transaction, selectedAccountId) {
