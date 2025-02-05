@@ -10,15 +10,17 @@
     <div class="container">
         <h1>Sunny Accounting</h1>
         
-        <div class="tabs">
-            <button class="tab-btn active" data-tab="journal-entries">Journal Entries</button>
-            <button class="tab-btn" data-tab="accounts">Chart of Accounts</button>
-            <button class="tab-btn" data-tab="reports">Reports</button>
-            <button class="tab-btn" data-tab="investments">Investments</button>
-            <button class="tab-btn" data-tab="reconciliation">Reconciliation</button>
+        <div class="tabs" role="tablist" aria-orientation="horizontal">
+            <div role="presentation" class="tab-list">
+                <button id="journal-entries-tab" class="tab-btn active" role="tab" aria-selected="true" aria-controls="journal-entries" data-tab="journal-entries">Journal Entries</button>
+                <button id="accounts-tab" class="tab-btn" role="tab" aria-selected="false" aria-controls="accounts" data-tab="accounts">Chart of Accounts</button>
+                <button id="reports-tab" class="tab-btn" role="tab" aria-selected="false" aria-controls="reports" data-tab="reports">Reports</button>
+                <button id="investments-tab" class="tab-btn" role="tab" aria-selected="false" aria-controls="investments" data-tab="investments">Investments</button>
+                <button id="reconciliation-tab" class="tab-btn" role="tab" aria-selected="false" aria-controls="reconciliation" data-tab="reconciliation">Reconciliation</button>
+            </div>
         </div>
 
-        <div id="journal-entries" class="tab-content active">
+        <div id="journal-entries" class="tab-content active" role="tabpanel" aria-labelledby="journal-entries-tab">
             <form id="transactionForm">
                 <div class="transaction-header-inputs">
                     <div class="form-group date-input">
@@ -79,7 +81,7 @@
             </div>
         </div>
 
-        <div id="accounts" class="tab-content">
+        <div id="accounts" class="tab-content" role="tabpanel" aria-labelledby="accounts-tab">
             <div id="accountError" class="error-message" style="display: none;"></div>
             <form id="accountForm">
                 <div class="form-group">
@@ -143,7 +145,7 @@
             </div>
         </div>
 
-        <div id="reports" class="tab-content">
+        <div id="reports" class="tab-content" role="tabpanel" aria-labelledby="reports-tab">
             <div class="reports-container">
                 <div class="report-selector">
                     <select id="reportType">
@@ -199,7 +201,7 @@
             </div>
         </div>
 
-        <div id="investments" class="tab-content">
+        <div id="investments" class="tab-content" role="tabpanel" aria-labelledby="investments-tab">
             <div class="investments-container">
                 <!-- Company Details Modal -->
                 <div id="companyDetailsModal" class="modal">
@@ -249,7 +251,7 @@
             </div>
         </div>
 
-        <div id="reconciliation" class="tab-content">
+        <div id="reconciliation" class="tab-content" role="tabpanel" aria-labelledby="reconciliation-tab">
             <div class="reconciliation-container">
                 <div class="reconciliation-header">
                     <div class="bank-selection">

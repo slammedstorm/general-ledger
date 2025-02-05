@@ -23,30 +23,107 @@ h1 {
 /* Tabs */
 .tabs {
     margin-bottom: 20px;
+}
+
+.tab-list {
+    display: flex;
     border-bottom: 1px solid #ddd;
+    position: relative;
+    margin: 0;
+    padding: 0;
+    gap: 4px;
+    align-items: flex-end;
 }
 
 .tab-btn {
-    padding: 10px 20px;
-    margin-right: 5px;
+    padding: 12px 24px;
+    margin: 0;
     border: none;
     background: none;
     cursor: pointer;
     font-size: 16px;
     color: #666;
+    position: relative;
+    transition: all 0.2s ease-in-out;
+    border-radius: 4px 4px 0 0;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    white-space: nowrap;
+    user-select: none;
+}
+
+.tab-btn:hover {
+    color: #007bff;
+    background-color: rgba(0, 123, 255, 0.05);
+}
+
+.tab-btn:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.4);
+    color: #007bff;
+    z-index: 2;
+    position: relative;
+}
+
+.tab-btn:focus:not(:focus-visible) {
+    box-shadow: none;
 }
 
 .tab-btn.active {
     color: #007bff;
-    border-bottom: 2px solid #007bff;
+    font-weight: 500;
+    background-color: rgba(0, 123, 255, 0.1);
+    z-index: 1;
+}
+
+/* Ensure keyboard focus is visible even when tab is active */
+.tab-btn.active:focus-visible {
+    box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.4);
+    z-index: 2;
+}
+
+.tab-btn.active::after {
+    content: '';
+    position: absolute;
+    bottom: -1px;
+    left: 0;
+    width: 100%;
+    height: 2px;
+    background-color: #007bff;
+    transform-origin: bottom;
+    transition: transform 0.2s ease-in-out;
+}
+
+/* Ensure consistent spacing between tab buttons */
+.tab-btn + .tab-btn {
+    margin-left: 2px;
 }
 
 .tab-content {
     display: none;
+    opacity: 0;
+    transform: translateY(10px);
+    transition: opacity 0.2s ease-out, transform 0.2s ease-out;
+    will-change: opacity, transform;
 }
 
 .tab-content.active {
     display: block;
+    opacity: 1;
+    transform: translateY(0);
+}
+
+/* Ensure tab panels maintain layout during transitions */
+.tab-content > * {
+    margin-top: 0;
+    margin-bottom: 0;
+}
+
+/* Prevent focus outline on tab panels */
+.tab-content:focus {
+    outline: none;
 }
 
 /* Forms */
