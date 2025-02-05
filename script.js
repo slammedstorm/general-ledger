@@ -837,8 +837,9 @@ class Investments {
                     // Reset editing state
                     this.editingRowId = null;
 
-                    // Update the display
+                    // Update both the modal and main investment table
                     this.showCompanyDetails(account);
+                    this.renderInvestments();
                 });
 
                 row.querySelector('.cancel-btn').addEventListener('click', () => {
