@@ -714,6 +714,176 @@ class Investments {
                 this.hideModal();
             }
         });
+
+        // New Company button
+        document.getElementById('newCompanyBtn').addEventListener('click', () => {
+            // Show modal with account code and name inputs
+            this.modalCompanyName.textContent = 'New Investment';
+            const tableBody = document.getElementById('companyDetailsBody');
+            tableBody.innerHTML = `
+                <tr>
+                    <td colspan="8" style="padding: 20px;">
+                        <div style="margin-bottom: 20px;">
+                            <div style="display: flex; gap: 20px; margin-bottom: 20px;">
+                                <div>
+                                    <label style="display: block; margin-bottom: 5px;">Account Code:</label>
+                                    <input type="text" id="newAccountCode" style="width: 100px;" required>
+                                </div>
+                                <div>
+                                    <label style="display: block; margin-bottom: 5px;">Company Name:</label>
+                                    <input type="text" id="newCompanyName" style="width: 200px;" required>
+                                </div>
+                            </div>
+                        </div>
+                        <table style="width: 100%; border-collapse: collapse;">
+                            <thead>
+                                <tr>
+                                    <th>Round</th>
+                                    <th>Date</th>
+                                    <th>Shares</th>
+                                    <th>Cost Basis</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>
+                                        <select id="newRound" style="width: 100%;" required>
+                                            <option value="SAFE">SAFE</option>
+                                            <option value="Series Seed Preferred">Series Seed Preferred</option>
+                                            <option value="Series A Preferred">Series A Preferred</option>
+                                            <option value="Series B Preferred">Series B Preferred</option>
+                                            <option value="Series C Preferred">Series C Preferred</option>
+                                            <option value="Convertible Note">Convertible Note</option>
+                                        </select>
+                                    </td>
+                                    <td>
+                                        <input type="date" id="newDate" style="width: 100%;" required value="${new Date().toISOString().split('T')[0]}">
+                                    </td>
+                                    <td>
+                                        <input type="number" id="newShares" style="width: 100%;" step="1" min="0">
+                                    </td>
+                                    <td>
+                                        <input type="number" id="newCostBasis" style="width: 100%;" step="0.01" min="0" required>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <div style="margin-top: 20px; text-align: right;">
+                            <button id="createCompanyBtn" class="save-btn">Create Company</button>
+                            <button class="cancel-btn">Cancel</button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+
+            // Add event listeners
+            const createBtn = tableBody.querySelector('#createCompanyBtn');
+            const cancelBtn = tableBody.querySelector('.cancel-btn');
+            const codeInput = tableBody.querySelector('#newAccountCode');
+            const nameInput = tableBody.querySelector('#newCompanyName');
+
+            createBtn.addEventListener('click', () => {
+                const code = codeInput.value.trim();
+                const name = nameInput.value.trim();
+                const round = document.getElementById('newRound').value;
+                const date = document.getElementById('newDate').value;
+                const shares = parseFloat(document.getElementById('newShares').value) || null;
+                const costBasis = parseFloat(document.getElementById('newCostBasis').value);
+
+                if (!code || !name || !costBasis) {
+                    alert('Please enter account code, company name, and cost basis');
+                    return;
+                }
+
+                const chartOfAccounts = JSON.parse(localStorage.getItem('chartOfAccounts')) || [];
+                
+                // Validate account code and name
+                const existingCode = chartOfAccounts.find(a => a.code === code);
+                if (existingCode) {
+                    alert('An account with this code already exists');
+                    return;
+                }
+
+                const existingName = chartOfAccounts.find(a => a.name === name);
+                if (existingName) {
+                    alert('An account with this name already exists');
+                    return;
+                }
+
+                // Create new investment account
+                const newAccount = {
+                    code: code,
+                    name: name,
+                    accountType: 'Investment',
+                    description: '',
+                    id: Date.now()
+                };
+
+                // Create corresponding MTM account
+                const mtmAccount = {
+                    code: code + '1',
+                    name: name + ' - MTM',
+                    accountType: 'MTM',
+                    description: 'MTM account for ' + name,
+                    id: Date.now() + 1
+                };
+
+                chartOfAccounts.push(newAccount, mtmAccount);
+                localStorage.setItem('chartOfAccounts', JSON.stringify(chartOfAccounts));
+
+                // Create initial transaction using the selected date
+                const journalEntries = JSON.parse(localStorage.getItem('journalEntries')) || [];
+                const transaction = {
+                    date: date,
+                    description: `Initial investment in ${name} - ${round}`,
+                    lineItems: [
+                        {
+                            accountId: newAccount.id.toString(),
+                            accountName: `${code} - ${name}`,
+                            accountType: 'Investment',
+                            description: `Initial investment - ${round}`,
+                            type: 'debit',
+                            amount: costBasis
+                        },
+                        {
+                            accountId: 'CASH',
+                            accountName: 'Cash',
+                            accountType: 'Bank Account',
+                            description: `Initial investment in ${name}`,
+                            type: 'credit',
+                            amount: costBasis
+                        }
+                    ],
+                    id: Date.now()
+                };
+                journalEntries.push(transaction);
+                localStorage.setItem('journalEntries', JSON.stringify(journalEntries));
+
+                // Store investment details
+                const investmentDetails = JSON.parse(localStorage.getItem('investmentDetails')) || {};
+                if (!investmentDetails[newAccount.id]) {
+                    investmentDetails[newAccount.id] = {};
+                }
+                investmentDetails[newAccount.id][date] = {
+                    round: round,
+                    shares: shares,
+                    fmv: costBasis,
+                    fmvPerShare: shares ? costBasis / shares : null
+                };
+                localStorage.setItem('investmentDetails', JSON.stringify(investmentDetails));
+
+                // Hide modal and refresh view
+                this.hideModal();
+                this.renderInvestments();
+            });
+
+            cancelBtn.addEventListener('click', () => {
+                this.hideModal();
+            });
+
+            // Show the modal
+            this.showModal();
+        });
     }
 
     showModal() {
