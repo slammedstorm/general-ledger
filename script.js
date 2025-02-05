@@ -696,6 +696,9 @@ class Investments {
         this.investmentsBody = document.getElementById('investmentsBody');
         this.editingRowId = null;
         this.newCompanyBtn = document.getElementById('newCompanyBtn');
+        this.modal = document.getElementById('companyDetailsModal');
+        this.modalCompanyName = document.getElementById('modalCompanyName');
+        this.modalBody = document.getElementById('companyDetailsBody');
         this.initializeEventListeners();
         this.renderInvestments();
     }
@@ -704,6 +707,78 @@ class Investments {
         this.newCompanyBtn.addEventListener('click', () => {
             this.createNewCompany();
         });
+
+        // Modal close button
+        this.modal.querySelector('.close-modal').addEventListener('click', () => {
+            this.hideModal();
+        });
+
+        // Close modal when clicking outside
+        window.addEventListener('click', (event) => {
+            if (event.target === this.modal) {
+                this.hideModal();
+            }
+        });
+    }
+
+    showModal() {
+        this.modal.style.display = 'block';
+    }
+
+    hideModal() {
+        this.modal.style.display = 'none';
+    }
+
+    showCompanyDetails(account) {
+        const { transactions } = this.getTransactionsForAccount(account.id);
+        const investmentDetails = JSON.parse(localStorage.getItem('investmentDetails')) || {};
+        
+        // Group transactions by round
+        const roundGroups = {};
+        transactions.forEach(transaction => {
+            const details = investmentDetails[account.id]?.[transaction.date] || {};
+            const round = details.round || 'Unspecified';
+            
+            if (!roundGroups[round]) {
+                roundGroups[round] = [];
+            }
+            roundGroups[round].push({ transaction, details });
+        });
+
+        // Set modal title
+        this.modalCompanyName.textContent = account.name;
+
+        // Clear existing content
+        this.modalBody.innerHTML = '';
+
+        // Add rows for each round
+        Object.entries(roundGroups).forEach(([round, entries]) => {
+            entries.forEach(({ transaction, details }) => {
+                const cost = transaction.amount;
+                const shares = details.shares;
+                const costPerShare = shares ? cost / shares : null;
+                const fmvPerShare = details.fmvPerShare;
+                const fmv = details.fmv || cost;
+                const unrealizedGainLoss = fmv - cost;
+
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${round}</td>
+                    <td>${this.formatDate(transaction.date)}</td>
+                    <td class="amount-cell">${shares ? shares.toLocaleString() : ''}</td>
+                    <td class="amount-cell">${costPerShare ? this.formatCurrency(costPerShare) : ''}</td>
+                    <td class="amount-cell">${fmvPerShare ? this.formatCurrency(fmvPerShare) : ''}</td>
+                    <td class="amount-cell">${this.formatCurrency(cost)}</td>
+                    <td class="amount-cell">${this.formatCurrency(fmv)}</td>
+                    <td class="amount-cell ${unrealizedGainLoss >= 0 ? 'positive' : 'negative'}">
+                        ${this.formatCurrency(unrealizedGainLoss)}
+                    </td>
+                `;
+                this.modalBody.appendChild(row);
+            });
+        });
+
+        this.showModal();
     }
 
     async createNewCompany() {
@@ -841,7 +916,39 @@ class Investments {
         const sharesInput = row.querySelector('.edit-shares').value.trim();
         const newShares = sharesInput ? parseFloat(sharesInput) : null;
         const newFmvPerShare = newShares ? parseFloat(row.querySelector('.edit-fmv-per-share').value) || 0 : null;
-        const newFmv = parseFloat(row.querySelector('.edit-fmv').value) || transaction.amount;
+        const newFmv = parseFloat(row.querySelector('.edit-fmv').value) || 0;
+        const cost = transaction.amount || parseFloat(row.querySelector('.edit-fmv').value) || 0;
+
+        // Create a new journal entry if this is a new investment
+        if (transaction.amount === 0) {
+            const journalEntries = JSON.parse(localStorage.getItem('journalEntries')) || [];
+            const newEntry = {
+                date: transaction.date,
+                description: `Initial investment in ${account.name}`,
+                lineItems: [
+                    {
+                        accountId: account.id.toString(),
+                        accountName: `${account.code} - ${account.name}`,
+                        accountType: 'Investment',
+                        description: `Initial investment - ${newRound}`,
+                        type: 'debit',
+                        amount: cost
+                    },
+                    {
+                        accountId: 'CASH', // Placeholder - user will need to reconcile
+                        accountName: 'Cash',
+                        accountType: 'Bank Account',
+                        description: `Initial investment in ${account.name}`,
+                        type: 'credit',
+                        amount: cost
+                    }
+                ],
+                id: Date.now()
+            };
+            journalEntries.push(newEntry);
+            localStorage.setItem('journalEntries', JSON.stringify(journalEntries));
+            transaction.amount = cost; // Update the transaction amount for MTM calculation
+        }
 
         const accounts = JSON.parse(localStorage.getItem('chartOfAccounts')) || [];
         
@@ -976,12 +1083,52 @@ class Investments {
         const investmentDetails = JSON.parse(localStorage.getItem('investmentDetails')) || {};
         
         investmentAccounts.forEach(account => {
-            const { transactions, balance } = this.getTransactionsForAccount(account.id);
-            // Skip if no transactions or zero balance
-            if (transactions.length === 0 || balance === 0) return;
-
+            const { transactions } = this.getTransactionsForAccount(account.id);
             let totalCost = 0;
             let totalFMV = 0;
+
+            // If no transactions, show a row with zero values
+            if (transactions.length === 0) {
+                const row = document.createElement('tr');
+                row.style.backgroundColor = '#f8f9fa';  // Light gray background for zero-balance rows
+                row.innerHTML = `
+                    <td>${account.name}</td>
+                    <td>${new Date().toLocaleDateString()}</td>
+                    <td>-</td>
+                    <td class="amount-cell">-</td>
+                    <td class="amount-cell">-</td>
+                    <td class="amount-cell">-</td>
+                    <td class="amount-cell">-</td>
+                    <td class="amount-cell">-</td>
+                    <td class="amount-cell">-</td>
+                    <td>
+                        <button class="edit-btn" style="background-color: #28a745; color: white; border: none; padding: 5px 10px; border-radius: 4px;">+ Add Investment</button>
+                    </td>
+                `;
+
+                row.querySelector('.edit-btn').addEventListener('click', () => {
+                    // Create a placeholder transaction for new investments
+                    const placeholderTransaction = {
+                        date: new Date().toISOString().split('T')[0],
+                        amount: 0
+                    };
+                    const row = this.generateEditingRow(
+                        account,
+                        placeholderTransaction,
+                        null,
+                        null,
+                        null,
+                        0,
+                        0,
+                        {}
+                    );
+                    this.investmentsBody.innerHTML = '';
+                    this.investmentsBody.appendChild(row);
+                });
+                
+                this.investmentsBody.appendChild(row);
+                return;
+            }
 
             // Add individual transaction rows
             transactions.forEach(transaction => {
@@ -1015,7 +1162,7 @@ class Investments {
                 } else {
                     const row = document.createElement('tr');
                     row.innerHTML = `
-                        <td>${account.name}</td>
+                        <td class="company-name" style="cursor: pointer;">${account.name}</td>
                         <td>${this.formatDate(transaction.date)}</td>
                         <td>${details.round || ''}</td>
                         <td class="amount-cell">${shares ? shares.toLocaleString() : ''}</td>
@@ -1034,6 +1181,11 @@ class Investments {
                     row.querySelector('.edit-btn').addEventListener('click', () => {
                         this.editingRowId = rowId;
                         this.renderInvestments();
+                    });
+
+                    // Add click handler for company name
+                    row.querySelector('.company-name').addEventListener('click', () => {
+                        this.showCompanyDetails(account);
                     });
                     
                     this.investmentsBody.appendChild(row);
