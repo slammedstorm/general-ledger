@@ -2479,6 +2479,7 @@ class Reconciliation {
                         </select>
                         <button class="confirm-btn" style="display: none;">Confirm</button>
                         <button class="reconcile-btn">Reconcile</button>
+                        <button class="delete-btn" style="margin-left: 10px;">Delete</button>
                     </div>
                 </td>
             `;
@@ -2488,6 +2489,7 @@ class Reconciliation {
             const reconcileBtn = row.querySelector('.reconcile-btn');
             const accountSelect = row.querySelector('.account-select');
             const confirmBtn = row.querySelector('.confirm-btn');
+            const deleteBtn = row.querySelector('.delete-btn');
             
             reconcileBtn.addEventListener('click', () => {
                 // Show account select and confirm button
@@ -2502,6 +2504,12 @@ class Reconciliation {
                     return;
                 }
                 this.reconcileTransaction(transaction, accountSelect.value);
+            });
+
+            deleteBtn.addEventListener('click', () => {
+                if (confirm('Are you sure you want to delete this bank transaction?')) {
+                    this.deleteBankTransaction(transaction.id);
+                }
             });
             
             this.bankTransactionsBody.appendChild(row);
@@ -2572,6 +2580,13 @@ class Reconciliation {
             options += '</optgroup>';
         });
         return options;
+    }
+
+    deleteBankTransaction(id) {
+        const bankTransactions = JSON.parse(localStorage.getItem('bankTransactions')) || [];
+        const updatedTransactions = bankTransactions.filter(t => t.id !== id);
+        localStorage.setItem('bankTransactions', JSON.stringify(updatedTransactions));
+        this.loadUnreconciledEntries();
     }
 
     reconcileEntry(entryId) {
