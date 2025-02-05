@@ -762,18 +762,109 @@ class Investments {
                 const unrealizedGainLoss = fmv - cost;
 
                 const row = document.createElement('tr');
-                row.innerHTML = `
-                    <td>${round}</td>
-                    <td>${this.formatDate(transaction.date)}</td>
-                    <td class="amount-cell">${shares ? shares.toLocaleString() : ''}</td>
-                    <td class="amount-cell">${costPerShare ? this.formatCurrency(costPerShare) : ''}</td>
-                    <td class="amount-cell">${fmvPerShare ? this.formatCurrency(fmvPerShare) : ''}</td>
-                    <td class="amount-cell">${this.formatCurrency(cost)}</td>
-                    <td class="amount-cell">${this.formatCurrency(fmv)}</td>
-                    <td class="amount-cell ${unrealizedGainLoss >= 0 ? 'positive' : 'negative'}">
-                        ${this.formatCurrency(unrealizedGainLoss)}
-                    </td>
-                `;
+                const rowId = `modal-${account.id}-${transaction.date}`;
+                
+                if (this.editingRowId === rowId) {
+                    row.innerHTML = `
+                        <td>${round}</td>
+                        <td>${this.formatDate(transaction.date)}</td>
+                        <td class="amount-cell">
+                            <input type="number" class="edit-shares" value="${shares || ''}" style="width: 100px;">
+                        </td>
+                        <td class="amount-cell">${costPerShare ? this.formatCurrency(costPerShare) : ''}</td>
+                        <td class="amount-cell">
+                            <input type="number" step="0.01" class="edit-fmv-per-share" value="${fmvPerShare || ''}" style="width: 100px;">
+                        </td>
+                        <td class="amount-cell">${this.formatCurrency(cost)}</td>
+                        <td class="amount-cell">
+                            <input type="number" step="0.01" class="edit-fmv" value="${fmv}" style="width: 100px;">
+                        </td>
+                        <td class="amount-cell ${fmv - cost >= 0 ? 'positive' : 'negative'}">
+                            ${this.formatCurrency(unrealizedGainLoss)}
+                        </td>
+                        <td>
+                            <select class="edit-round" style="width: 150px;">
+                                <option value="SAFE" ${details.round === "SAFE" ? "selected" : ""}>SAFE</option>
+                                <option value="Series Seed Preferred" ${details.round === "Series Seed Preferred" ? "selected" : ""}>Series Seed Preferred</option>
+                                <option value="Series A Preferred" ${details.round === "Series A Preferred" ? "selected" : ""}>Series A Preferred</option>
+                                <option value="Series B Preferred" ${details.round === "Series B Preferred" ? "selected" : ""}>Series B Preferred</option>
+                                <option value="Series C Preferred" ${details.round === "Series C Preferred" ? "selected" : ""}>Series C Preferred</option>
+                                <option value="Convertible Note" ${details.round === "Convertible Note" ? "selected" : ""}>Convertible Note</option>
+                            </select>
+                            <button class="save-btn">Save</button>
+                            <button class="cancel-btn">Cancel</button>
+                        </td>
+                    `;
+
+                    // Add event listeners for automatic calculations
+                    const sharesInput = row.querySelector('.edit-shares');
+                    const fmvPerShareInput = row.querySelector('.edit-fmv-per-share');
+                    const fmvInput = row.querySelector('.edit-fmv');
+
+                    sharesInput.addEventListener('input', () => {
+                        const shares = parseFloat(sharesInput.value);
+                        if (!shares || shares === 0) {
+                            fmvPerShareInput.value = '';
+                            fmvInput.value = cost.toFixed(2); // Set FMV equal to cost
+                        } else {
+                            const fmvPerShare = parseFloat(fmvPerShareInput.value) || 0;
+                            fmvInput.value = (shares * fmvPerShare).toFixed(2);
+                        }
+                    });
+
+                    fmvPerShareInput.addEventListener('input', () => {
+                        const shares = parseFloat(sharesInput.value);
+                        if (!shares || shares === 0) {
+                            fmvInput.value = cost.toFixed(2); // Set FMV equal to cost
+                        } else {
+                            const fmvPerShare = parseFloat(fmvPerShareInput.value) || 0;
+                            fmvInput.value = (shares * fmvPerShare).toFixed(2);
+                        }
+                    });
+
+                    fmvInput.addEventListener('input', () => {
+                        const shares = parseFloat(sharesInput.value);
+                        if (!shares || shares === 0) {
+                            fmvPerShareInput.value = '';
+                        } else {
+                            const fmv = parseFloat(fmvInput.value) || 0;
+                            fmvPerShareInput.value = (fmv / shares).toFixed(2);
+                        }
+                    });
+
+                    // Add save and cancel handlers
+                    row.querySelector('.save-btn').addEventListener('click', () => {
+                        this.saveInvestmentEdit(row, account, transaction);
+                    });
+
+                    row.querySelector('.cancel-btn').addEventListener('click', () => {
+                        this.editingRowId = null;
+                        this.showCompanyDetails(account);
+                    });
+                } else {
+                    row.innerHTML = `
+                        <td>${round}</td>
+                        <td>${this.formatDate(transaction.date)}</td>
+                        <td class="amount-cell">${shares ? shares.toLocaleString() : ''}</td>
+                        <td class="amount-cell">${costPerShare ? this.formatCurrency(costPerShare) : ''}</td>
+                        <td class="amount-cell">${fmvPerShare ? this.formatCurrency(fmvPerShare) : ''}</td>
+                        <td class="amount-cell">${this.formatCurrency(cost)}</td>
+                        <td class="amount-cell">${this.formatCurrency(fmv)}</td>
+                        <td class="amount-cell ${unrealizedGainLoss >= 0 ? 'positive' : 'negative'}">
+                            ${this.formatCurrency(unrealizedGainLoss)}
+                        </td>
+                        <td>
+                            <button class="edit-btn">Edit</button>
+                        </td>
+                    `;
+
+                    // Add edit button handler
+                    row.querySelector('.edit-btn').addEventListener('click', () => {
+                        this.editingRowId = rowId;
+                        this.showCompanyDetails(account); // Refresh the modal with editing row
+                    });
+                }
+                
                 this.modalBody.appendChild(row);
             });
         });
@@ -911,7 +1002,11 @@ class Investments {
     }
 
     saveInvestmentEdit(row, account, transaction) {
-        const newCompany = row.querySelector('.edit-company').value.trim();
+        // Check if this is a modal edit
+        const isModalEdit = row.closest('#companyDetailsModal');
+        
+        // For modal edits, we don't need the company name as it can't be changed in the modal
+        const newCompany = isModalEdit ? account.name : row.querySelector('.edit-company').value.trim();
         const newRound = row.querySelector('.edit-round').value.trim();
         const sharesInput = row.querySelector('.edit-shares').value.trim();
         const newShares = sharesInput ? parseFloat(sharesInput) : null;
@@ -919,8 +1014,8 @@ class Investments {
         const newFmv = parseFloat(row.querySelector('.edit-fmv').value) || 0;
         const cost = transaction.amount || parseFloat(row.querySelector('.edit-fmv').value) || 0;
 
-        // Create a new journal entry if this is a new investment
-        if (transaction.amount === 0) {
+        // Create a new journal entry if this is a new investment (not applicable for modal edits)
+        if (!isModalEdit && transaction.amount === 0) {
             const journalEntries = JSON.parse(localStorage.getItem('journalEntries')) || [];
             const newEntry = {
                 date: transaction.date,
@@ -952,8 +1047,8 @@ class Investments {
 
         const accounts = JSON.parse(localStorage.getItem('chartOfAccounts')) || [];
         
-        // Update account names if company name changed
-        if (newCompany !== account.name) {
+        // Update account names if company name changed (not applicable for modal edits)
+        if (!isModalEdit && newCompany !== account.name) {
             // Update investment account name
             const accountIndex = accounts.findIndex(a => a.id === account.id);
             if (accountIndex !== -1) {
@@ -1043,6 +1138,13 @@ class Investments {
         localStorage.setItem('investmentDetails', JSON.stringify(storedDetails));
 
         this.editingRowId = null;
+        
+        // If this was a modal edit, refresh the modal view
+        if (isModalEdit) {
+            this.showCompanyDetails(account);
+        }
+        
+        // Always refresh the main investments table
         this.renderInvestments();
     }
 
