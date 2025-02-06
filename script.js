@@ -2567,12 +2567,15 @@ class Reconciliation {
         const unreconciledTransactions = journalEntries.filter(entry => 
             !entry.reconciled && 
             entry.transactionType !== 'bank' &&
-            entry.transactionType !== 'investment' &&
-            // Match amount (considering debit/credit)
-            entry.lineItems.some(item => {
-                const itemAmount = item.type === 'debit' ? item.amount : -item.amount;
-                return Math.abs(itemAmount - bankTransaction.amount) < 0.01;
-            })
+            // For investment transactions, match the investment amount directly
+            (entry.transactionType === 'investment' ? 
+                entry.lineItems[0].amount === Math.abs(bankTransaction.amount) :
+                // For other transactions, match amount considering debit/credit
+                entry.lineItems.some(item => {
+                    const itemAmount = item.type === 'debit' ? item.amount : -item.amount;
+                    return Math.abs(itemAmount - bankTransaction.amount) < 0.01;
+                })
+            )
         );
 
         let options = '';
