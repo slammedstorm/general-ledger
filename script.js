@@ -2594,12 +2594,44 @@ class Reconciliation {
                         return;
                     }
                     this.reconcileTransaction(transaction, accountSelect.value);
-                } else {
+                } else if (selectedType === 'existing') {
                     if (!transactionSelect.value) {
                         alert('Please select a transaction');
                         return;
                     }
                     this.reconcileWithExisting(transaction, transactionSelect.value);
+                } else if (selectedType === 'multiple') {
+                    // Validate multiple entries
+                    const entries = row.querySelectorAll('.multiple-entry');
+                    let totalAmount = 0;
+                    let hasError = false;
+
+                    entries.forEach(entry => {
+                        const accountId = entry.querySelector('.account-select').value;
+                        const amount = parseFloat(entry.querySelector('.amount-input').value) || 0;
+
+                        if (!accountId) {
+                            alert('Please select an account for all entries');
+                            hasError = true;
+                            return;
+                        }
+                        if (amount <= 0) {
+                            alert('Please enter a valid amount for all entries');
+                            hasError = true;
+                            return;
+                        }
+                        totalAmount += amount;
+                    });
+
+                    if (hasError) return;
+
+                    // Validate total amount matches bank transaction
+                    if (Math.abs(Math.abs(totalAmount) - Math.abs(transaction.amount)) > 0.01) {
+                        alert('Total amount must equal bank transaction amount');
+                        return;
+                    }
+
+                    this.reconcileTransaction(transaction, null);
                 }
             });
 
