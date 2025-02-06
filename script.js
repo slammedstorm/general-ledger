@@ -2598,43 +2598,23 @@ class Reconciliation {
             return;
         }
 
-        // Create bank side of the entry
-        const newEntry = {
-            date: bankTransaction.date,
-            description: bankTransaction.description || existingEntry.description,
-            lineItems: [
-                {
-                    accountId: this.bankAccountSelect.value,
-                    accountName: this.getAccountName(this.bankAccountSelect.value),
-                    accountType: 'Bank Account',
-                    description: bankTransaction.description || existingEntry.description,
-                    type: bankTransaction.amount > 0 ? 'debit' : 'credit',
-                    amount: Math.abs(bankTransaction.amount)
-                }
-            ],
-            id: bankTransaction.id,
-            transactionType: 'bank',
-            reconciled: true
-        };
-
-        // Add matching line items from existing entry
-        existingEntry.lineItems.forEach(item => {
-            if (item.accountType !== 'Bank Account') {
-                newEntry.lineItems.push({
-                    ...item,
-                    description: bankTransaction.description || item.description
-                });
-            }
-        });
-
-        // Mark existing entry as reconciled
+        // Update the existing entry with bank account details and mark as reconciled
         existingEntry.reconciled = true;
+        
+        // Add bank account line item to the existing entry
+        existingEntry.lineItems.push({
+            accountId: this.bankAccountSelect.value,
+            accountName: this.getAccountName(this.bankAccountSelect.value),
+            accountType: 'Bank Account',
+            description: bankTransaction.description || existingEntry.description,
+            type: bankTransaction.amount > 0 ? 'debit' : 'credit',
+            amount: Math.abs(bankTransaction.amount)
+        });
 
         // Update journal entries
         const updatedEntries = journalEntries.map(entry => 
             entry.id === existingEntry.id ? existingEntry : entry
         );
-        updatedEntries.push(newEntry);
         localStorage.setItem('journalEntries', JSON.stringify(updatedEntries));
 
         // Mark as reconciled
