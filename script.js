@@ -2481,6 +2481,9 @@ class Reconciliation {
                                 <label style="margin-left: 10px;">
                                     <input type="radio" name="reconcile-type-${transaction.id}" value="existing"> Match Existing Entry
                                 </label>
+                                <label style="margin-left: 10px;">
+                                    <input type="radio" name="reconcile-type-${transaction.id}" value="multiple"> Split Into Multiple
+                                </label>
                             </div>
                             <div class="new-entry-controls">
                                 <select class="account-select">
@@ -2493,6 +2496,22 @@ class Reconciliation {
                                     <option value="">Select Transaction</option>
                                     ${this.generateTransactionOptions(transaction)}
                                 </select>
+                            </div>
+                            <div class="multiple-entries-controls" style="display: none;">
+                                <div class="multiple-entries-list">
+                                    <div class="multiple-entry">
+                                        <select class="account-select">
+                                            <option value="">Select Account</option>
+                                            ${this.generateAccountOptions(accounts)}
+                                        </select>
+                                        <input type="number" class="amount-input" placeholder="Amount" step="0.01">
+                                        <input type="text" class="description-input" placeholder="Description">
+                                    </div>
+                                </div>
+                                <button type="button" class="add-entry-btn" style="margin-top: 5px;">Add Entry</button>
+                                <div class="remaining-amount" style="margin-top: 5px;">
+                                    Remaining: ${this.formatCurrency(Math.abs(transaction.amount))}
+                                </div>
                             </div>
                             <button class="confirm-btn" style="margin-top: 10px;">Confirm</button>
                         </div>
@@ -2524,10 +2543,45 @@ class Reconciliation {
                     if (radio.value === 'new') {
                         newEntryControls.style.display = 'block';
                         existingEntryControls.style.display = 'none';
-                    } else {
+                        row.querySelector('.multiple-entries-controls').style.display = 'none';
+                    } else if (radio.value === 'existing') {
                         newEntryControls.style.display = 'none';
                         existingEntryControls.style.display = 'block';
+                        row.querySelector('.multiple-entries-controls').style.display = 'none';
+                    } else if (radio.value === 'multiple') {
+                        newEntryControls.style.display = 'none';
+                        existingEntryControls.style.display = 'none';
+                        row.querySelector('.multiple-entries-controls').style.display = 'block';
                     }
+                });
+            });
+
+            // Add entry button handler
+            const addEntryBtn = row.querySelector('.add-entry-btn');
+            const multipleEntriesList = row.querySelector('.multiple-entries-list');
+            addEntryBtn.addEventListener('click', () => {
+                const newEntry = document.createElement('div');
+                newEntry.className = 'multiple-entry';
+                newEntry.innerHTML = `
+                    <select class="account-select">
+                        <option value="">Select Account</option>
+                        ${this.generateAccountOptions(accounts)}
+                    </select>
+                    <input type="number" class="amount-input" placeholder="Amount" step="0.01">
+                    <input type="text" class="description-input" placeholder="Description">
+                    <button type="button" class="remove-entry-btn">&times;</button>
+                `;
+                multipleEntriesList.appendChild(newEntry);
+
+                // Add remove button handler
+                newEntry.querySelector('.remove-entry-btn').addEventListener('click', () => {
+                    newEntry.remove();
+                    this.updateRemainingAmount(row, transaction);
+                });
+
+                // Add amount input handler
+                newEntry.querySelector('.amount-input').addEventListener('input', () => {
+                    this.updateRemainingAmount(row, transaction);
                 });
             });
             
@@ -2624,42 +2678,105 @@ class Reconciliation {
         this.loadUnreconciledEntries();
     }
 
-    reconcileTransaction(transaction, selectedAccountId) {
-        // Create journal entry
+    reconcileTransaction(transaction, selectedAccountId, description = null) {
         const journalEntries = JSON.parse(localStorage.getItem('journalEntries')) || [];
-        const newEntry = {
-            date: transaction.date,
-            description: transaction.description,
-            lineItems: [
-                {
-                    accountId: this.bankAccountSelect.value,
-                    accountName: this.getAccountName(this.bankAccountSelect.value),
-                    accountType: 'Bank Account',
-                    description: transaction.description,
-                    type: transaction.amount > 0 ? 'debit' : 'credit',
-                    amount: Math.abs(transaction.amount)
-                },
-                {
-                    accountId: selectedAccountId,
-                    accountName: this.getAccountName(selectedAccountId),
-                    accountType: this.getAccountType(selectedAccountId),
-                    description: transaction.description,
-                    type: transaction.amount > 0 ? 'credit' : 'debit',
-                    amount: Math.abs(transaction.amount)
-                }
-            ],
-            id: transaction.id, // Use same ID as bank transaction for reconciliation
-            transactionType: 'bank',
-            reconciled: true
-        };
-        journalEntries.push(newEntry);
-        localStorage.setItem('journalEntries', JSON.stringify(journalEntries));
+        const selectedType = document.querySelector(`input[name="reconcile-type-${transaction.id}"]:checked`).value;
 
-        // Mark transaction as reconciled
+        if (selectedType === 'multiple') {
+            const multipleEntriesList = document.querySelector(`tr[data-id="${transaction.id}"] .multiple-entries-list`);
+            const entries = multipleEntriesList.querySelectorAll('.multiple-entry');
+            let totalAmount = 0;
+
+            const lineItems = Array.from(entries).map(entry => {
+                const accountId = entry.querySelector('.account-select').value;
+                const amount = parseFloat(entry.querySelector('.amount-input').value) || 0;
+                const description = entry.querySelector('.description-input').value;
+                totalAmount += amount;
+
+                return {
+                    accountId: accountId,
+                    accountName: this.getAccountName(accountId),
+                    accountType: this.getAccountType(accountId),
+                    description: description,
+                    type: transaction.amount > 0 ? 'credit' : 'debit',
+                    amount: amount
+                };
+            });
+
+            // Validate total amount matches bank transaction
+            if (Math.abs(Math.abs(totalAmount) - Math.abs(transaction.amount)) > 0.01) {
+                alert('Total amount must equal bank transaction amount');
+                return;
+            }
+
+            // Add bank account line item
+            lineItems.unshift({
+                accountId: this.bankAccountSelect.value,
+                accountName: this.getAccountName(this.bankAccountSelect.value),
+                accountType: 'Bank Account',
+                description: transaction.description,
+                type: transaction.amount > 0 ? 'debit' : 'credit',
+                amount: Math.abs(transaction.amount)
+            });
+
+            const newEntry = {
+                date: transaction.date,
+                description: transaction.description,
+                lineItems: lineItems,
+                id: transaction.id,
+                transactionType: 'bank',
+                reconciled: true
+            };
+
+            journalEntries.push(newEntry);
+        } else {
+            // Original single entry logic
+            const newEntry = {
+                date: transaction.date,
+                description: description || transaction.description,
+                lineItems: [
+                    {
+                        accountId: this.bankAccountSelect.value,
+                        accountName: this.getAccountName(this.bankAccountSelect.value),
+                        accountType: 'Bank Account',
+                        description: description || transaction.description,
+                        type: transaction.amount > 0 ? 'debit' : 'credit',
+                        amount: Math.abs(transaction.amount)
+                    },
+                    {
+                        accountId: selectedAccountId,
+                        accountName: this.getAccountName(selectedAccountId),
+                        accountType: this.getAccountType(selectedAccountId),
+                        description: description || transaction.description,
+                        type: transaction.amount > 0 ? 'credit' : 'debit',
+                        amount: Math.abs(transaction.amount)
+                    }
+                ],
+                id: transaction.id,
+                transactionType: 'bank',
+                reconciled: true
+            };
+            journalEntries.push(newEntry);
+        }
+
+        localStorage.setItem('journalEntries', JSON.stringify(journalEntries));
         this.reconcileEntry(transaction.id);
-        
-        // Refresh the view
         this.loadUnreconciledEntries();
+    }
+
+    updateRemainingAmount(row, transaction) {
+        const entries = row.querySelectorAll('.multiple-entry');
+        let totalAmount = 0;
+        
+        entries.forEach(entry => {
+            const amount = parseFloat(entry.querySelector('.amount-input').value) || 0;
+            totalAmount += amount;
+        });
+
+        const remainingAmount = Math.abs(transaction.amount) - totalAmount;
+        const remainingDiv = row.querySelector('.remaining-amount');
+        remainingDiv.textContent = `Remaining: ${this.formatCurrency(remainingAmount)}`;
+        remainingDiv.style.color = remainingAmount < 0 ? 'red' : 'inherit';
     }
 
     isReconciled(id) {
