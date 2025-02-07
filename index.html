@@ -17,6 +17,7 @@
                 <button id="reports-tab" class="tab-btn" role="tab" aria-selected="false" aria-controls="reports" data-tab="reports">Reports</button>
                 <button id="investments-tab" class="tab-btn" role="tab" aria-selected="false" aria-controls="investments" data-tab="investments">Investments</button>
                 <button id="reconciliation-tab" class="tab-btn" role="tab" aria-selected="false" aria-controls="reconciliation" data-tab="reconciliation">Reconciliation</button>
+                <button id="notes-tab" class="tab-btn" role="tab" aria-selected="false" aria-controls="notes" data-tab="notes">Notes</button>
             </div>
         </div>
 
@@ -232,7 +233,7 @@
                     </div>
                 </div>
                 <div class="investments-actions">
-                    <button id="newCompanyBtn" class="primary-btn">New Company</button>
+                    <button id="newCompanyBtn" class="primary-btn">Purchase</button>
                 </div>
                 <table id="investmentsTable">
                     <thead>
@@ -295,6 +296,15 @@
                         </table>
                     </div>
                 </div>
+            </div>
+        </div>
+
+        <div id="notes" class="tab-content" role="tabpanel" aria-labelledby="notes-tab">
+            <div class="notes-container">
+                <div class="notes-header">
+                    <button id="newNoteBtn" class="primary-btn">New Note</button>
+                </div>
+                <div id="notesList"></div>
             </div>
         </div>
     </div>

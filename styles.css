@@ -589,6 +589,121 @@ th {
     margin-top: 20px;
 }
 
+/* Notes */
+.notes-container {
+    margin-top: 20px;
+}
+
+.notes-header {
+    margin-bottom: 20px;
+}
+
+.note {
+    background-color: white;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 20px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.note-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.note-header h3 {
+    margin: 0;
+    color: #333;
+}
+
+.note-actions {
+    display: flex;
+    gap: 10px;
+}
+
+.note-content {
+    color: #666;
+    line-height: 1.5;
+    margin-bottom: 15px;
+    white-space: pre-wrap;
+}
+
+.note-footer {
+    font-size: 0.9em;
+    color: #888;
+}
+
+.note-date {
+    margin-bottom: 5px;
+}
+
+.note-modified {
+    font-style: italic;
+}
+
+.note-form {
+    background-color: white;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 20px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.note-form .note-title {
+    width: 100%;
+    padding: 8px;
+    margin-bottom: 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 16px;
+}
+
+.note-form .note-content {
+    width: 100%;
+    min-height: 150px;
+    padding: 8px;
+    margin-bottom: 15px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+    resize: vertical;
+}
+
+.note-form .form-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+}
+
+.edit-note, .delete-note {
+    padding: 4px 8px;
+    font-size: 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    border: none;
+    color: white;
+}
+
+.edit-note {
+    background-color: #20b2aa;
+}
+
+.edit-note:hover {
+    background-color: #179690;
+}
+
+.delete-note {
+    background-color: #dc3545;
+}
+
+.delete-note:hover {
+    background-color: #c82333;
+}
+
 /* Reconciliation Selection Styles */
 #bankTransactionsTable tr.selected {
     background-color: #e3f2fd;

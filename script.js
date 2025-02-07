@@ -1489,6 +1489,165 @@ class Investments {
     }
 }
 
+class Notes {
+    constructor() {
+        this.notes = JSON.parse(localStorage.getItem('notes')) || [];
+        this.notesList = document.getElementById('notesList');
+        this.newNoteBtn = document.getElementById('newNoteBtn');
+        this.editingNoteId = null;
+        
+        this.initializeEventListeners();
+        this.renderNotes();
+    }
+
+    initializeEventListeners() {
+        this.newNoteBtn.addEventListener('click', () => {
+            this.createNoteForm();
+        });
+    }
+
+    createNoteForm(note = null) {
+        const form = document.createElement('div');
+        form.className = 'note-form';
+        form.innerHTML = `
+            <div class="form-group">
+                <input type="text" class="note-title" placeholder="Title" value="${note ? note.title : ''}" required>
+            </div>
+            <div class="form-group">
+                <textarea class="note-content" placeholder="Note content" required>${note ? note.content : ''}</textarea>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="save-note primary-btn">Save</button>
+                <button type="button" class="cancel-note secondary-btn">Cancel</button>
+            </div>
+        `;
+
+        if (note) {
+            const existingNote = document.querySelector(`[data-id="${note.id}"]`);
+            existingNote.replaceWith(form);
+        } else {
+            this.notesList.insertBefore(form, this.notesList.firstChild);
+        }
+
+        const saveBtn = form.querySelector('.save-note');
+        const cancelBtn = form.querySelector('.cancel-note');
+        const titleInput = form.querySelector('.note-title');
+        const contentInput = form.querySelector('.note-content');
+
+        saveBtn.addEventListener('click', () => {
+            const title = titleInput.value.trim();
+            const content = contentInput.value.trim();
+
+            if (!title || !content) {
+                alert('Please fill in both title and content');
+                return;
+            }
+
+            if (note) {
+                this.updateNote(note.id, title, content);
+            } else {
+                this.addNote(title, content);
+            }
+        });
+
+        cancelBtn.addEventListener('click', () => {
+            if (note) {
+                this.renderNote(note);
+            } else {
+                form.remove();
+            }
+        });
+
+        titleInput.focus();
+    }
+
+    addNote(title, content) {
+        const note = {
+            id: Date.now(),
+            title: title,
+            content: content,
+            date: new Date().toISOString()
+        };
+
+        this.notes.unshift(note);
+        this.saveToLocalStorage();
+        this.renderNotes();
+    }
+
+    updateNote(id, title, content) {
+        const index = this.notes.findIndex(note => note.id === id);
+        if (index !== -1) {
+            this.notes[index] = {
+                ...this.notes[index],
+                title: title,
+                content: content,
+                lastModified: new Date().toISOString()
+            };
+            this.saveToLocalStorage();
+            this.renderNotes();
+        }
+    }
+
+    deleteNote(id) {
+        if (confirm('Are you sure you want to delete this note?')) {
+            this.notes = this.notes.filter(note => note.id !== id);
+            this.saveToLocalStorage();
+            this.renderNotes();
+        }
+    }
+
+    renderNote(note) {
+        const noteElement = document.createElement('div');
+        noteElement.className = 'note';
+        noteElement.dataset.id = note.id;
+        
+        const date = new Date(note.date);
+        const formattedDate = date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+        
+        let lastModified = '';
+        if (note.lastModified) {
+            const modifiedDate = new Date(note.lastModified);
+            lastModified = `<div class="note-modified">Last modified: ${modifiedDate.toLocaleDateString()} ${modifiedDate.toLocaleTimeString()}</div>`;
+        }
+
+        noteElement.innerHTML = `
+            <div class="note-header">
+                <h3>${note.title}</h3>
+                <div class="note-actions">
+                    <button class="edit-note">Edit</button>
+                    <button class="delete-note">Delete</button>
+                </div>
+            </div>
+            <div class="note-content">${note.content.replace(/\n/g, '<br>')}</div>
+            <div class="note-footer">
+                <div class="note-date">Created: ${formattedDate}</div>
+                ${lastModified}
+            </div>
+        `;
+
+        noteElement.querySelector('.edit-note').addEventListener('click', () => {
+            this.createNoteForm(note);
+        });
+
+        noteElement.querySelector('.delete-note').addEventListener('click', () => {
+            this.deleteNote(note.id);
+        });
+
+        return noteElement;
+    }
+
+    renderNotes() {
+        this.notesList.innerHTML = '';
+        this.notes.forEach(note => {
+            this.notesList.appendChild(this.renderNote(note));
+        });
+    }
+
+    saveToLocalStorage() {
+        localStorage.setItem('notes', JSON.stringify(this.notes));
+    }
+}
+
 class Reports {
     constructor() {
         this.reportType = document.getElementById('reportType');
@@ -2929,6 +3088,7 @@ document.addEventListener('DOMContentLoaded', () => {
     new GeneralLedger();
     new Reports();
     new Investments();
+    new Notes();
     initializeTabs();
     new Reconciliation();
 });
