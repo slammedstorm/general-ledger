@@ -783,16 +783,27 @@ class Investments {
             }
         });
 
-        // New Company button
+        // Purchase button
         document.getElementById('newCompanyBtn').addEventListener('click', () => {
-            // Show modal with account code and name inputs
+            // Show modal with investment type selection
             this.modalCompanyName.textContent = 'New Investment';
             const tableBody = document.getElementById('companyDetailsBody');
             tableBody.innerHTML = `
                 <tr>
                     <td colspan="8" style="padding: 20px;">
                         <div style="margin-bottom: 20px;">
-                            <div style="display: flex; gap: 20px; margin-bottom: 20px;">
+                            <div style="margin-bottom: 20px;">
+                                <label style="display: block; margin-bottom: 10px;">Investment Type:</label>
+                                <div style="display: flex; gap: 20px;">
+                                    <label>
+                                        <input type="radio" name="investmentType" value="new" checked> New Company
+                                    </label>
+                                    <label>
+                                        <input type="radio" name="investmentType" value="existing"> Add Round to Existing Company
+                                    </label>
+                                </div>
+                            </div>
+                            <div id="newCompanyInputs" style="display: flex; gap: 20px; margin-bottom: 20px;">
                                 <div>
                                     <label style="display: block; margin-bottom: 5px;">Account Code:</label>
                                     <input type="text" id="newAccountCode" style="width: 100px;" required>
@@ -801,6 +812,12 @@ class Investments {
                                     <label style="display: block; margin-bottom: 5px;">Company Name:</label>
                                     <input type="text" id="newCompanyName" style="width: 200px;" required>
                                 </div>
+                            </div>
+                            <div id="existingCompanyInput" style="margin-bottom: 20px; display: none;">
+                                <label style="display: block; margin-bottom: 5px;">Select Company:</label>
+                                <select id="existingCompanySelect" style="width: 100%;">
+                                    <option value="">Select a company...</option>
+                                </select>
                             </div>
                         </div>
                         <table style="width: 100%; border-collapse: collapse;">
@@ -837,106 +854,196 @@ class Investments {
                             </tbody>
                         </table>
                         <div style="margin-top: 20px; text-align: right;">
-                            <button id="createCompanyBtn" class="save-btn">Create Company</button>
+                            <button id="createCompanyBtn" class="save-btn">Purchase</button>
                             <button class="cancel-btn">Cancel</button>
                         </div>
                     </td>
                 </tr>
             `;
 
-            // Add event listeners
+            // Add event listeners for investment type selection
+            const radioButtons = tableBody.querySelectorAll('input[name="investmentType"]');
+            const newCompanyInputs = tableBody.querySelector('#newCompanyInputs');
+            const existingCompanyInput = tableBody.querySelector('#existingCompanyInput');
+            const existingCompanySelect = tableBody.querySelector('#existingCompanySelect');
             const createBtn = tableBody.querySelector('#createCompanyBtn');
             const cancelBtn = tableBody.querySelector('.cancel-btn');
             const codeInput = tableBody.querySelector('#newAccountCode');
             const nameInput = tableBody.querySelector('#newCompanyName');
 
+            // Populate existing company select
+            const investmentAccounts = this.getInvestmentAccounts();
+            investmentAccounts.forEach(account => {
+                const option = document.createElement('option');
+                option.value = account.id;
+                option.textContent = `${account.code} - ${account.name}`;
+                existingCompanySelect.appendChild(option);
+            });
+
+            // Add radio button change handler
+            radioButtons.forEach(radio => {
+                radio.addEventListener('change', () => {
+                    if (radio.value === 'new') {
+                        newCompanyInputs.style.display = 'flex';
+                        existingCompanyInput.style.display = 'none';
+                        createBtn.textContent = 'Create Company';
+                    } else {
+                        newCompanyInputs.style.display = 'none';
+                        existingCompanyInput.style.display = 'block';
+                        createBtn.textContent = 'Add Round';
+                    }
+                });
+            });
+
             createBtn.addEventListener('click', () => {
-                const code = codeInput.value.trim();
-                const name = nameInput.value.trim();
+                const selectedType = tableBody.querySelector('input[name="investmentType"]:checked').value;
                 const round = document.getElementById('newRound').value;
                 const date = document.getElementById('newDate').value;
                 const shares = parseFloat(document.getElementById('newShares').value) || null;
                 const costBasis = parseFloat(document.getElementById('newCostBasis').value);
 
-                if (!code || !name || !costBasis) {
-                    alert('Please enter account code, company name, and cost basis');
+                if (!costBasis) {
+                    alert('Please enter cost basis');
                     return;
                 }
 
-                const chartOfAccounts = JSON.parse(localStorage.getItem('chartOfAccounts')) || [];
-                
-                // Validate account code and name
-                const existingCode = chartOfAccounts.find(a => a.code === code);
-                if (existingCode) {
-                    alert('An account with this code already exists');
-                    return;
+                if (selectedType === 'new') {
+                    // Create new company
+                    const code = codeInput.value.trim();
+                    const name = nameInput.value.trim();
+
+                    if (!code || !name) {
+                        alert('Please enter account code and company name');
+                        return;
+                    }
+
+                    const chartOfAccounts = JSON.parse(localStorage.getItem('chartOfAccounts')) || [];
+                    
+                    // Validate account code and name
+                    const existingCode = chartOfAccounts.find(a => a.code === code);
+                    if (existingCode) {
+                        alert('An account with this code already exists');
+                        return;
+                    }
+
+                    const existingName = chartOfAccounts.find(a => a.name === name);
+                    if (existingName) {
+                        alert('An account with this name already exists');
+                        return;
+                    }
+
+                    // Create new investment account
+                    const newAccount = {
+                        code: code,
+                        name: name,
+                        accountType: 'Investment',
+                        description: '',
+                        id: Date.now()
+                    };
+
+                    // Create corresponding MTM account
+                    const mtmAccount = {
+                        code: code + '1',
+                        name: name + ' - MTM',
+                        accountType: 'MTM',
+                        description: 'MTM account for ' + name,
+                        id: Date.now() + 1
+                    };
+
+                    chartOfAccounts.push(newAccount, mtmAccount);
+                    localStorage.setItem('chartOfAccounts', JSON.stringify(chartOfAccounts));
+
+                    // Create initial transaction
+                    const journalEntries = JSON.parse(localStorage.getItem('journalEntries')) || [];
+                    const transaction = {
+                        date: date,
+                        description: `Initial investment in ${name} - ${round}`,
+                        lineItems: [
+                            {
+                                accountId: newAccount.id.toString(),
+                                accountName: `${code} - ${name}`,
+                                accountType: 'Investment',
+                                description: `Initial investment - ${round}`,
+                                type: 'debit',
+                                amount: costBasis
+                            }
+                        ],
+                        id: Date.now(),
+                        transactionType: 'investment',
+                        reconciled: false
+                    };
+                    journalEntries.push(transaction);
+                    localStorage.setItem('journalEntries', JSON.stringify(journalEntries));
+
+                    // Store investment details
+                    const investmentDetails = JSON.parse(localStorage.getItem('investmentDetails')) || {};
+                    if (!investmentDetails[newAccount.id]) {
+                        investmentDetails[newAccount.id] = {};
+                    }
+                    investmentDetails[newAccount.id][date] = {
+                        round: round,
+                        shares: shares,
+                        fmv: costBasis,
+                        fmvPerShare: shares ? costBasis / shares : null
+                    };
+                    localStorage.setItem('investmentDetails', JSON.stringify(investmentDetails));
+
+                    // Hide modal and refresh view
+                    this.hideModal();
+                    this.renderInvestments();
+                } else {
+                    // Add round to existing company
+                    const accountId = existingCompanySelect.value;
+                    if (!accountId) {
+                        alert('Please select a company');
+                        return;
+                    }
+
+                    const account = this.getInvestmentAccounts().find(a => a.id.toString() === accountId);
+                    if (!account) {
+                        alert('Selected company not found');
+                        return;
+                    }
+
+                    // Create new transaction for the round
+                    const journalEntries = JSON.parse(localStorage.getItem('journalEntries')) || [];
+                    const transaction = {
+                        date: date,
+                        description: `Additional investment in ${account.name} - ${round}`,
+                        lineItems: [
+                            {
+                                accountId: account.id.toString(),
+                                accountName: `${account.code} - ${account.name}`,
+                                accountType: 'Investment',
+                                description: `Additional investment - ${round}`,
+                                type: 'debit',
+                                amount: costBasis
+                            }
+                        ],
+                        id: Date.now(),
+                        transactionType: 'investment',
+                        reconciled: false
+                    };
+                    journalEntries.push(transaction);
+                    localStorage.setItem('journalEntries', JSON.stringify(journalEntries));
+
+                    // Store investment details
+                    const investmentDetails = JSON.parse(localStorage.getItem('investmentDetails')) || {};
+                    if (!investmentDetails[account.id]) {
+                        investmentDetails[account.id] = {};
+                    }
+                    investmentDetails[account.id][date] = {
+                        round: round,
+                        shares: shares,
+                        fmv: costBasis,
+                        fmvPerShare: shares ? costBasis / shares : null
+                    };
+                    localStorage.setItem('investmentDetails', JSON.stringify(investmentDetails));
+
+                    // Hide modal and refresh view
+                    this.hideModal();
+                    this.renderInvestments();
                 }
-
-                const existingName = chartOfAccounts.find(a => a.name === name);
-                if (existingName) {
-                    alert('An account with this name already exists');
-                    return;
-                }
-
-                // Create new investment account
-                const newAccount = {
-                    code: code,
-                    name: name,
-                    accountType: 'Investment',
-                    description: '',
-                    id: Date.now()
-                };
-
-                // Create corresponding MTM account
-                const mtmAccount = {
-                    code: code + '1',
-                    name: name + ' - MTM',
-                    accountType: 'MTM',
-                    description: 'MTM account for ' + name,
-                    id: Date.now() + 1
-                };
-
-                chartOfAccounts.push(newAccount, mtmAccount);
-                localStorage.setItem('chartOfAccounts', JSON.stringify(chartOfAccounts));
-
-                // Create initial transaction using the selected date - only investment side
-                const journalEntries = JSON.parse(localStorage.getItem('journalEntries')) || [];
-                const transaction = {
-                    date: date,
-                    description: `Initial investment in ${name} - ${round}`,
-                    lineItems: [
-                        {
-                            accountId: newAccount.id.toString(),
-                            accountName: `${code} - ${name}`,
-                            accountType: 'Investment',
-                            description: `Initial investment - ${round}`,
-                            type: 'debit',
-                            amount: costBasis
-                        }
-                    ],
-                    id: Date.now(),
-                    transactionType: 'investment',
-                    reconciled: false
-                };
-                journalEntries.push(transaction);
-                localStorage.setItem('journalEntries', JSON.stringify(journalEntries));
-
-                // Store investment details
-                const investmentDetails = JSON.parse(localStorage.getItem('investmentDetails')) || {};
-                if (!investmentDetails[newAccount.id]) {
-                    investmentDetails[newAccount.id] = {};
-                }
-                investmentDetails[newAccount.id][date] = {
-                    round: round,
-                    shares: shares,
-                    fmv: costBasis,
-                    fmvPerShare: shares ? costBasis / shares : null
-                };
-                localStorage.setItem('investmentDetails', JSON.stringify(investmentDetails));
-
-                // Hide modal and refresh view
-                this.hideModal();
-                this.renderInvestments();
             });
 
             cancelBtn.addEventListener('click', () => {
