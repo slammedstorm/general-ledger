@@ -1082,6 +1082,10 @@ class Investments {
                         </select>
                     </div>
                     <div id="sellDetails" style="display: none;">
+                        <div style="margin-bottom: 20px;">
+                            <h3>Investment Rounds:</h3>
+                            <div id="roundsList" style="margin-bottom: 15px;"></div>
+                        </div>
                         <table style="width: 100%; border-collapse: collapse;">
                             <thead>
                                 <tr>
@@ -1096,7 +1100,7 @@ class Investments {
                                         <input type="date" id="sellDate" style="width: 100%;" required value="${new Date().toISOString().split('T')[0]}">
                                     </td>
                                     <td>
-                                        <input type="number" id="sellShares" style="width: 100%;" step="1" min="0">
+                                        <input type="number" id="sellShares" style="width: 100%;" step="1" min="0" readonly>
                                     </td>
                                     <td>
                                         <input type="number" id="sellPrice" style="width: 100%;" step="0.01" min="0" required>
@@ -1152,11 +1156,38 @@ class Investments {
                 let totalSharesOwned = 0;
                 let totalCost = 0;
                 
-                transactions.forEach(transaction => {
+                // Generate rounds list with purchase dates
+                const roundsList = document.getElementById('roundsList');
+                roundsList.innerHTML = '';
+                
+                transactions.forEach((transaction, index) => {
                     const details = investmentDetails[account.id]?.[transaction.date] || {};
                     if (details.shares) {
                         totalSharesOwned += details.shares;
                         totalCost += transaction.amount;
+                        
+                        const roundDiv = document.createElement('div');
+                        roundDiv.className = 'round-option';
+                        roundDiv.style.marginBottom = '10px';
+                        roundDiv.innerHTML = `
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <input type="number" 
+                                    id="roundShares${index}" 
+                                    class="round-shares" 
+                                    min="0" 
+                                    max="${details.shares}" 
+                                    value="0" 
+                                    style="width: 80px;"
+                                    data-original-shares="${details.shares}"
+                                    data-cost="${transaction.amount / details.shares}">
+                                <label>
+                                    ${details.round || `Round ${index + 1}`}: ${details.shares.toLocaleString()} shares 
+                                    @ ${this.formatCurrency(transaction.amount / details.shares)} each
+                                    (Purchased: ${this.formatDate(transaction.date)})
+                                </label>
+                            </div>
+                        `;
+                        roundsList.appendChild(roundDiv);
                     }
                 });
 
@@ -1170,23 +1201,41 @@ class Investments {
                 sellDetails.style.display = 'block';
                 sellConfirmBtn.style.display = 'block';
                 
-                // Set max shares that can be sold
-                sellShares.max = totalSharesOwned;
-                
-                // Update totals when inputs change
+                // Update totals when round shares or price changes
                 const updateTotals = () => {
-                    const shares = parseFloat(sellShares.value) || 0;
+                    let totalSelectedShares = 0;
+                    let weightedCostBasis = 0;
+                    
+                    document.querySelectorAll('.round-shares').forEach(input => {
+                        const shares = parseInt(input.value) || 0;
+                        const costPerShare = parseFloat(input.dataset.cost);
+                        totalSelectedShares += shares;
+                        weightedCostBasis += shares * costPerShare;
+                    });
+                    
                     const price = parseFloat(sellPrice.value) || 0;
-                    const saleAmount = shares * price;
-                    const costBasis = shares * averageCostBasis;
-                    const gainLoss = saleAmount - costBasis;
+                    const saleAmount = totalSelectedShares * price;
+                    const gainLoss = saleAmount - weightedCostBasis;
+                    
+                    // Update the readonly total shares field
+                    sellShares.value = totalSelectedShares;
                     
                     totalSaleAmount.textContent = this.formatCurrency(saleAmount);
                     realizedGainLoss.textContent = this.formatCurrency(gainLoss);
                     realizedGainLoss.style.color = gainLoss >= 0 ? 'green' : 'red';
                 };
                 
-                sellShares.addEventListener('input', updateTotals);
+                // Add event listeners for round share inputs
+                document.querySelectorAll('.round-shares').forEach(input => {
+                    input.addEventListener('input', (e) => {
+                        const max = parseInt(e.target.dataset.originalShares);
+                        if (parseInt(e.target.value) > max) {
+                            e.target.value = max;
+                        }
+                        updateTotals();
+                    });
+                });
+                
                 sellPrice.addEventListener('input', updateTotals);
             } else {
                 sellDetails.style.display = 'none';
@@ -1196,12 +1245,12 @@ class Investments {
 
         sellConfirmBtn.addEventListener('click', () => {
             const accountId = sellCompanySelect.value;
-            const shares = parseFloat(sellShares.value);
+            const totalShares = parseFloat(sellShares.value);
             const price = parseFloat(sellPrice.value);
             const date = document.getElementById('sellDate').value;
             
-            if (!accountId || !shares || !price || !date) {
-                alert('Please fill in all fields');
+            if (!accountId || totalShares === 0 || !price || !date) {
+                alert('Please fill in all fields and select shares to sell');
                 return;
             }
             
@@ -1209,31 +1258,35 @@ class Investments {
             const { transactions } = this.getTransactionsForAccount(account.id);
             const investmentDetails = JSON.parse(localStorage.getItem('investmentDetails')) || {};
             
-            // Calculate total shares owned
-            let totalSharesOwned = 0;
-            transactions.forEach(transaction => {
-                const details = investmentDetails[account.id]?.[transaction.date] || {};
-                if (details.shares) {
-                    totalSharesOwned += details.shares;
+            // Collect shares being sold from each round
+            const roundSales = [];
+            let totalCostBasis = 0;
+            
+            document.querySelectorAll('.round-shares').forEach((input, index) => {
+                const sharesToSell = parseInt(input.value) || 0;
+                if (sharesToSell > 0) {
+                    const details = investmentDetails[account.id]?.[transactions[index].date] || {};
+                    if (sharesToSell > details.shares) {
+                        alert(`Cannot sell more shares than available in round ${index + 1}`);
+                        return;
+                    }
+                    
+                    const costPerShare = transactions[index].amount / details.shares;
+                    const roundCost = sharesToSell * costPerShare;
+                    totalCostBasis += roundCost;
+                    
+                    roundSales.push({
+                        date: transactions[index].date,
+                        shares: sharesToSell,
+                        costBasis: roundCost,
+                        details: details
+                    });
                 }
             });
             
-            if (shares > totalSharesOwned) {
-                alert('Cannot sell more shares than owned');
-                return;
-            }
-            
-            // Calculate average cost basis
-            let totalCost = 0;
-            transactions.forEach(transaction => {
-                totalCost += transaction.amount;
-            });
-            const averageCostBasis = totalSharesOwned ? totalCost / totalSharesOwned : 0;
-            
             // Calculate realized gain/loss
-            const saleAmount = shares * price;
-            const costBasisForSoldShares = shares * averageCostBasis;
-            const realizedGainLoss = saleAmount - costBasisForSoldShares;
+            const saleAmount = totalShares * price;
+            const realizedGainLoss = saleAmount - totalCostBasis;
             
             // Create journal entries
             const journalEntries = JSON.parse(localStorage.getItem('journalEntries')) || [];
@@ -1241,7 +1294,7 @@ class Investments {
             // 1. Record the sale
             const saleEntry = {
                 date: date,
-                description: `Sale of ${shares} shares of ${account.name}`,
+                description: `Sale of ${totalShares} shares of ${account.name}`,
                 lineItems: [
                     {
                         accountId: account.id.toString(),
@@ -1249,7 +1302,7 @@ class Investments {
                         accountType: 'Investment',
                         description: 'Investment sale',
                         type: 'credit',
-                        amount: costBasisForSoldShares
+                        amount: totalCostBasis
                     }
                 ],
                 id: Date.now(),
@@ -1273,16 +1326,29 @@ class Investments {
             journalEntries.push(saleEntry);
             localStorage.setItem('journalEntries', JSON.stringify(journalEntries));
             
-            // Update investment details
-            const remainingShares = totalSharesOwned - shares;
-            if (!investmentDetails[account.id]) {
-                investmentDetails[account.id] = {};
-            }
-            investmentDetails[account.id][date] = {
-                shares: remainingShares,
-                fmv: remainingShares * price,
-                fmvPerShare: price
-            };
+            // Update investment details for each affected round
+            roundSales.forEach(sale => {
+                const originalDetails = sale.details;
+                const remainingShares = originalDetails.shares - sale.shares;
+                
+                if (!investmentDetails[account.id]) {
+                    investmentDetails[account.id] = {};
+                }
+                
+                if (remainingShares > 0) {
+                    // Update existing round with remaining shares
+                    investmentDetails[account.id][sale.date] = {
+                        ...originalDetails,
+                        shares: remainingShares,
+                        fmv: remainingShares * price,
+                        fmvPerShare: price
+                    };
+                } else {
+                    // Remove the round if no shares remain
+                    delete investmentDetails[account.id][sale.date];
+                }
+            });
+            
             localStorage.setItem('investmentDetails', JSON.stringify(investmentDetails));
             
             this.hideModal();
