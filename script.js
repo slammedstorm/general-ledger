@@ -783,6 +783,11 @@ class Investments {
             }
         });
 
+        // Sell button
+        document.getElementById('sellInvestmentBtn').addEventListener('click', () => {
+            this.showSellModal();
+        });
+
         // Purchase button
         document.getElementById('newCompanyBtn').addEventListener('click', () => {
             // Show modal with investment type selection
@@ -1061,6 +1066,257 @@ class Investments {
 
     hideModal() {
         this.modal.style.display = 'none';
+    }
+
+    showSellModal() {
+        // Show modal with company selection
+        this.modalCompanyName.textContent = 'Sell Investment';
+        const tableBody = document.getElementById('companyDetailsBody');
+        tableBody.innerHTML = `
+            <tr>
+                <td colspan="8" style="padding: 20px;">
+                    <div style="margin-bottom: 20px;">
+                        <label style="display: block; margin-bottom: 5px;">Select Company:</label>
+                        <select id="sellCompanySelect" style="width: 100%;">
+                            <option value="">Select a company...</option>
+                        </select>
+                    </div>
+                    <div id="sellDetails" style="display: none;">
+                        <table style="width: 100%; border-collapse: collapse;">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Shares to Sell</th>
+                                    <th>Sale Price</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>
+                                        <input type="date" id="sellDate" style="width: 100%;" required value="${new Date().toISOString().split('T')[0]}">
+                                    </td>
+                                    <td>
+                                        <input type="number" id="sellShares" style="width: 100%;" step="1" min="0">
+                                    </td>
+                                    <td>
+                                        <input type="number" id="sellPrice" style="width: 100%;" step="0.01" min="0" required>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <div id="sellSummary" style="margin-top: 20px;">
+                            <p>Total Shares Owned: <span id="totalShares">0</span></p>
+                            <p>Average Cost Basis: <span id="avgCostBasis">$0.00</span></p>
+                            <p>Total Sale Amount: <span id="totalSaleAmount">$0.00</span></p>
+                            <p>Realized Gain/Loss: <span id="realizedGainLoss">$0.00</span></p>
+                        </div>
+                    </div>
+                    <div style="margin-top: 20px; text-align: right;">
+                        <button id="sellConfirmBtn" class="save-btn" style="display: none;">Sell</button>
+                        <button class="cancel-btn">Cancel</button>
+                    </div>
+                </td>
+            </tr>
+        `;
+
+        // Populate company select
+        const sellCompanySelect = document.getElementById('sellCompanySelect');
+        const investmentAccounts = this.getInvestmentAccounts();
+        investmentAccounts.forEach(account => {
+            const { transactions } = this.getTransactionsForAccount(account.id);
+            if (transactions.length > 0) {
+                const option = document.createElement('option');
+                option.value = account.id;
+                option.textContent = `${account.code} - ${account.name}`;
+                sellCompanySelect.appendChild(option);
+            }
+        });
+
+        // Add event listeners
+        const sellDetails = document.getElementById('sellDetails');
+        const sellConfirmBtn = document.getElementById('sellConfirmBtn');
+        const sellShares = document.getElementById('sellShares');
+        const sellPrice = document.getElementById('sellPrice');
+        const totalShares = document.getElementById('totalShares');
+        const avgCostBasis = document.getElementById('avgCostBasis');
+        const totalSaleAmount = document.getElementById('totalSaleAmount');
+        const realizedGainLoss = document.getElementById('realizedGainLoss');
+
+        sellCompanySelect.addEventListener('change', () => {
+            if (sellCompanySelect.value) {
+                const account = investmentAccounts.find(a => a.id.toString() === sellCompanySelect.value);
+                const { transactions } = this.getTransactionsForAccount(account.id);
+                const investmentDetails = JSON.parse(localStorage.getItem('investmentDetails')) || {};
+                
+                // Calculate total shares and average cost basis
+                let totalSharesOwned = 0;
+                let totalCost = 0;
+                
+                transactions.forEach(transaction => {
+                    const details = investmentDetails[account.id]?.[transaction.date] || {};
+                    if (details.shares) {
+                        totalSharesOwned += details.shares;
+                        totalCost += transaction.amount;
+                    }
+                });
+
+                const averageCostBasis = totalSharesOwned ? totalCost / totalSharesOwned : 0;
+                
+                // Update display
+                totalShares.textContent = totalSharesOwned.toLocaleString();
+                avgCostBasis.textContent = this.formatCurrency(averageCostBasis);
+                
+                // Show sell details
+                sellDetails.style.display = 'block';
+                sellConfirmBtn.style.display = 'block';
+                
+                // Set max shares that can be sold
+                sellShares.max = totalSharesOwned;
+                
+                // Update totals when inputs change
+                const updateTotals = () => {
+                    const shares = parseFloat(sellShares.value) || 0;
+                    const price = parseFloat(sellPrice.value) || 0;
+                    const saleAmount = shares * price;
+                    const costBasis = shares * averageCostBasis;
+                    const gainLoss = saleAmount - costBasis;
+                    
+                    totalSaleAmount.textContent = this.formatCurrency(saleAmount);
+                    realizedGainLoss.textContent = this.formatCurrency(gainLoss);
+                    realizedGainLoss.style.color = gainLoss >= 0 ? 'green' : 'red';
+                };
+                
+                sellShares.addEventListener('input', updateTotals);
+                sellPrice.addEventListener('input', updateTotals);
+            } else {
+                sellDetails.style.display = 'none';
+                sellConfirmBtn.style.display = 'none';
+            }
+        });
+
+        sellConfirmBtn.addEventListener('click', () => {
+            const accountId = sellCompanySelect.value;
+            const shares = parseFloat(sellShares.value);
+            const price = parseFloat(sellPrice.value);
+            const date = document.getElementById('sellDate').value;
+            
+            if (!accountId || !shares || !price || !date) {
+                alert('Please fill in all fields');
+                return;
+            }
+            
+            const account = investmentAccounts.find(a => a.id.toString() === accountId);
+            const { transactions } = this.getTransactionsForAccount(account.id);
+            const investmentDetails = JSON.parse(localStorage.getItem('investmentDetails')) || {};
+            
+            // Calculate total shares owned
+            let totalSharesOwned = 0;
+            transactions.forEach(transaction => {
+                const details = investmentDetails[account.id]?.[transaction.date] || {};
+                if (details.shares) {
+                    totalSharesOwned += details.shares;
+                }
+            });
+            
+            if (shares > totalSharesOwned) {
+                alert('Cannot sell more shares than owned');
+                return;
+            }
+            
+            // Calculate average cost basis
+            let totalCost = 0;
+            transactions.forEach(transaction => {
+                totalCost += transaction.amount;
+            });
+            const averageCostBasis = totalSharesOwned ? totalCost / totalSharesOwned : 0;
+            
+            // Calculate realized gain/loss
+            const saleAmount = shares * price;
+            const costBasisForSoldShares = shares * averageCostBasis;
+            const realizedGainLoss = saleAmount - costBasisForSoldShares;
+            
+            // Create journal entries
+            const journalEntries = JSON.parse(localStorage.getItem('journalEntries')) || [];
+            
+            // 1. Record the sale
+            const saleEntry = {
+                date: date,
+                description: `Sale of ${shares} shares of ${account.name}`,
+                lineItems: [
+                    {
+                        accountId: account.id.toString(),
+                        accountName: `${account.code} - ${account.name}`,
+                        accountType: 'Investment',
+                        description: 'Investment sale',
+                        type: 'credit',
+                        amount: costBasisForSoldShares
+                    }
+                ],
+                id: Date.now(),
+                transactionType: 'investment',
+                reconciled: false
+            };
+            
+            // 2. Record realized gain/loss
+            if (Math.abs(realizedGainLoss) > 0.01) {
+                const gainLossAccount = this.getOrCreateGainLossAccount();
+                saleEntry.lineItems.push({
+                    accountId: gainLossAccount.id.toString(),
+                    accountName: `${gainLossAccount.code} - ${gainLossAccount.name}`,
+                    accountType: gainLossAccount.accountType,
+                    description: 'Realized gain/loss on investment sale',
+                    type: realizedGainLoss > 0 ? 'credit' : 'debit',
+                    amount: Math.abs(realizedGainLoss)
+                });
+            }
+            
+            journalEntries.push(saleEntry);
+            localStorage.setItem('journalEntries', JSON.stringify(journalEntries));
+            
+            // Update investment details
+            const remainingShares = totalSharesOwned - shares;
+            if (!investmentDetails[account.id]) {
+                investmentDetails[account.id] = {};
+            }
+            investmentDetails[account.id][date] = {
+                shares: remainingShares,
+                fmv: remainingShares * price,
+                fmvPerShare: price
+            };
+            localStorage.setItem('investmentDetails', JSON.stringify(investmentDetails));
+            
+            this.hideModal();
+            this.renderInvestments();
+        });
+
+        document.querySelector('.cancel-btn').addEventListener('click', () => {
+            this.hideModal();
+        });
+
+        this.showModal();
+    }
+
+    getOrCreateGainLossAccount() {
+        const accounts = JSON.parse(localStorage.getItem('chartOfAccounts')) || [];
+        let gainLossAccount = accounts.find(a => 
+            a.accountType === 'Revenue' && 
+            a.code === 'RGL' && 
+            a.name === 'Realized Gain/Loss'
+        );
+        
+        if (!gainLossAccount) {
+            gainLossAccount = {
+                code: 'RGL',
+                name: 'Realized Gain/Loss',
+                accountType: 'Revenue',
+                description: 'Account for recording realized gains and losses on investments',
+                id: Date.now() + Math.floor(Math.random() * 1000)
+            };
+            accounts.push(gainLossAccount);
+            localStorage.setItem('chartOfAccounts', JSON.stringify(accounts));
+        }
+        
+        return gainLossAccount;
     }
 
     showCompanyDetails(account) {
