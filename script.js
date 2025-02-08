@@ -849,9 +849,10 @@ class Investments {
                                     <td>
                                         <input type="date" id="newDate" style="width: 100%;" required value="${new Date().toISOString().split('T')[0]}">
                                     </td>
-                                    <td>
-                                        <input type="number" id="newShares" style="width: 100%;" step="1" min="0">
-                                    </td>
+                    <td>
+                        <input type="number" id="newShares" style="width: 100%;" step="1" min="0" 
+                            ${['SAFE', 'Convertible Note'].includes(document.getElementById('newRound').value) ? '' : 'required'}>
+                    </td>
                                     <td>
                                         <input type="number" id="newCostBasis" style="width: 100%;" step="0.01" min="0" required>
                                     </td>
@@ -919,6 +920,17 @@ class Investments {
 
                     if (!code || !name) {
                         alert('Please enter account code and company name');
+                        return;
+                    }
+
+                    // Get selected round type
+                    const roundType = document.getElementById('newRound').value;
+                    const sharesRequired = !['SAFE', 'Convertible Note'].includes(roundType);
+                    const shares = parseFloat(document.getElementById('newShares').value);
+
+                    // Validate shares if required for this round type
+                    if (sharesRequired && !shares) {
+                        alert('Please enter number of shares');
                         return;
                     }
 
@@ -1162,13 +1174,30 @@ class Investments {
                 
                 transactions.forEach((transaction, index) => {
                     const details = investmentDetails[account.id]?.[transaction.date] || {};
-                    if (details.shares) {
+                    totalCost += transaction.amount;
+                    
+                    const roundDiv = document.createElement('div');
+                    roundDiv.className = 'round-option';
+                    roundDiv.style.marginBottom = '10px';
+                    
+                    if (details.round && ['SAFE', 'Convertible Note'].includes(details.round)) {
+                        // Handle SAFE and Convertible Note rounds
+                        roundDiv.innerHTML = `
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <input type="checkbox" 
+                                    id="roundSelect${index}" 
+                                    class="round-select"
+                                    data-cost="${transaction.amount}"
+                                    data-type="${details.round}">
+                                <label>
+                                    ${details.round}: ${this.formatCurrency(transaction.amount)}
+                                    (Purchased: ${this.formatDate(transaction.date)})
+                                </label>
+                            </div>
+                        `;
+                    } else if (details.shares) {
+                        // Handle equity rounds with shares
                         totalSharesOwned += details.shares;
-                        totalCost += transaction.amount;
-                        
-                        const roundDiv = document.createElement('div');
-                        roundDiv.className = 'round-option';
-                        roundDiv.style.marginBottom = '10px';
                         roundDiv.innerHTML = `
                             <div style="display: flex; align-items: center; gap: 10px;">
                                 <input type="number" 
@@ -1187,8 +1216,8 @@ class Investments {
                                 </label>
                             </div>
                         `;
-                        roundsList.appendChild(roundDiv);
                     }
+                    roundsList.appendChild(roundDiv);
                 });
 
                 const averageCostBasis = totalSharesOwned ? totalCost / totalSharesOwned : 0;
@@ -1201,11 +1230,13 @@ class Investments {
                 sellDetails.style.display = 'block';
                 sellConfirmBtn.style.display = 'block';
                 
-                // Update totals when round shares or price changes
+                // Update totals when round shares, checkboxes, or price changes
                 const updateTotals = () => {
                     let totalSelectedShares = 0;
                     let weightedCostBasis = 0;
+                    let hasSAFEOrNote = false;
                     
+                    // Handle equity rounds
                     document.querySelectorAll('.round-shares').forEach(input => {
                         const shares = parseInt(input.value) || 0;
                         const costPerShare = parseFloat(input.dataset.cost);
@@ -1213,19 +1244,34 @@ class Investments {
                         weightedCostBasis += shares * costPerShare;
                     });
                     
+                    // Handle SAFE and Convertible Note rounds
+                    document.querySelectorAll('.round-select').forEach(checkbox => {
+                        if (checkbox.checked) {
+                            const cost = parseFloat(checkbox.dataset.cost);
+                            weightedCostBasis += cost;
+                            hasSAFEOrNote = true;
+                        }
+                    });
+                    
                     const price = parseFloat(sellPrice.value) || 0;
-                    const saleAmount = totalSelectedShares * price;
+                    const saleAmount = hasSAFEOrNote ? price : totalSelectedShares * price;
                     const gainLoss = saleAmount - weightedCostBasis;
                     
                     // Update the readonly total shares field
-                    sellShares.value = totalSelectedShares;
+                    if (hasSAFEOrNote) {
+                        sellShares.value = 'N/A';
+                        sellShares.disabled = true;
+                    } else {
+                        sellShares.value = totalSelectedShares;
+                        sellShares.disabled = false;
+                    }
                     
                     totalSaleAmount.textContent = this.formatCurrency(saleAmount);
                     realizedGainLoss.textContent = this.formatCurrency(gainLoss);
                     realizedGainLoss.style.color = gainLoss >= 0 ? 'green' : 'red';
                 };
                 
-                // Add event listeners for round share inputs
+                // Add event listeners for round share inputs and checkboxes
                 document.querySelectorAll('.round-shares').forEach(input => {
                     input.addEventListener('input', (e) => {
                         const max = parseInt(e.target.dataset.originalShares);
@@ -1234,6 +1280,10 @@ class Investments {
                         }
                         updateTotals();
                     });
+                });
+                
+                document.querySelectorAll('.round-select').forEach(checkbox => {
+                    checkbox.addEventListener('change', updateTotals);
                 });
                 
                 sellPrice.addEventListener('input', updateTotals);
@@ -1258,10 +1308,30 @@ class Investments {
             const { transactions } = this.getTransactionsForAccount(account.id);
             const investmentDetails = JSON.parse(localStorage.getItem('investmentDetails')) || {};
             
-            // Collect shares being sold from each round
+            // Collect rounds being sold
             const roundSales = [];
             let totalCostBasis = 0;
+            let hasSAFEOrNote = false;
             
+            // Check for SAFE and Convertible Note rounds
+            document.querySelectorAll('.round-select').forEach((checkbox, index) => {
+                if (checkbox.checked) {
+                    const details = investmentDetails[account.id]?.[transactions[index].date] || {};
+                    const roundCost = parseFloat(checkbox.dataset.cost);
+                    totalCostBasis += roundCost;
+                    hasSAFEOrNote = true;
+                    
+                    roundSales.push({
+                        date: transactions[index].date,
+                        shares: null,
+                        costBasis: roundCost,
+                        details: details,
+                        type: checkbox.dataset.type
+                    });
+                }
+            });
+            
+            // Check for equity rounds
             document.querySelectorAll('.round-shares').forEach((input, index) => {
                 const sharesToSell = parseInt(input.value) || 0;
                 if (sharesToSell > 0) {
@@ -1279,13 +1349,19 @@ class Investments {
                         date: transactions[index].date,
                         shares: sharesToSell,
                         costBasis: roundCost,
-                        details: details
+                        details: details,
+                        type: 'equity'
                     });
                 }
             });
             
+            if (roundSales.length === 0) {
+                alert('Please select at least one round to sell');
+                return;
+            }
+            
             // Calculate realized gain/loss
-            const saleAmount = totalShares * price;
+            const saleAmount = hasSAFEOrNote ? price : totalShares * price;
             const realizedGainLoss = saleAmount - totalCostBasis;
             
             // Create journal entries
@@ -1511,9 +1587,18 @@ class Investments {
                 row.innerHTML = `
                     <td>${details.round || ''}</td>
                     <td>${this.formatDate(transaction.date)}</td>
-                    <td class="amount-cell">${shares ? shares.toLocaleString() : ''}</td>
-                    <td class="amount-cell">${costPerShare ? this.formatCurrency(costPerShare) : ''}</td>
-                    <td class="amount-cell">${fmvPerShare ? this.formatCurrency(fmvPerShare) : ''}</td>
+                    <td class="amount-cell">
+                        ${details.round && ['SAFE', 'Convertible Note'].includes(details.round) ? 'N/A' : 
+                          shares ? shares.toLocaleString() : ''}
+                    </td>
+                    <td class="amount-cell">
+                        ${details.round && ['SAFE', 'Convertible Note'].includes(details.round) ? 'N/A' : 
+                          costPerShare ? this.formatCurrency(costPerShare) : ''}
+                    </td>
+                    <td class="amount-cell">
+                        ${details.round && ['SAFE', 'Convertible Note'].includes(details.round) ? 'N/A' : 
+                          fmvPerShare ? this.formatCurrency(fmvPerShare) : ''}
+                    </td>
                     <td class="amount-cell">${this.formatCurrency(cost)}</td>
                     <td class="amount-cell">${this.formatCurrency(fmv)}</td>
                     <td class="amount-cell ${unrealizedGainLoss >= 0 ? 'positive' : 'negative'}">
@@ -1860,9 +1945,18 @@ class Investments {
                         <td class="company-name" style="cursor: pointer;">${account.name}</td>
                         <td>${this.formatDate(transaction.date)}</td>
                         <td>${details.round || ''}</td>
-                        <td class="amount-cell">${shares ? shares.toLocaleString() : ''}</td>
-                        <td class="amount-cell">${costPerShare ? this.formatCurrency(costPerShare) : ''}</td>
-                        <td class="amount-cell">${fmvPerShare ? this.formatCurrency(fmvPerShare) : ''}</td>
+                        <td class="amount-cell">
+                            ${details.round && ['SAFE', 'Convertible Note'].includes(details.round) ? 'N/A' : 
+                              shares ? shares.toLocaleString() : ''}
+                        </td>
+                        <td class="amount-cell">
+                            ${details.round && ['SAFE', 'Convertible Note'].includes(details.round) ? 'N/A' : 
+                              costPerShare ? this.formatCurrency(costPerShare) : ''}
+                        </td>
+                        <td class="amount-cell">
+                            ${details.round && ['SAFE', 'Convertible Note'].includes(details.round) ? 'N/A' : 
+                              fmvPerShare ? this.formatCurrency(fmvPerShare) : ''}
+                        </td>
                         <td class="amount-cell">${this.formatCurrency(cost)}</td>
                         <td class="amount-cell">${this.formatCurrency(fmv)}</td>
                         <td class="amount-cell ${unrealizedGainLoss >= 0 ? 'positive' : 'negative'}">
