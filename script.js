@@ -783,6 +783,30 @@ class Investments {
             }
         });
 
+        // Restore SAFE function
+        this.restoreSoldSafe = () => {
+            const investmentDetails = JSON.parse(localStorage.getItem('investmentDetails')) || {};
+            let restored = false;
+            
+            Object.entries(investmentDetails).forEach(([accountId, rounds]) => {
+                Object.entries(rounds).forEach(([date, details]) => {
+                    if (details.round === 'SAFE' && details.fmv === 0) {
+                        // Remove the fmv property to restore the SAFE
+                        delete details.fmv;
+                        restored = true;
+                    }
+                });
+            });
+            
+            if (restored) {
+                localStorage.setItem('investmentDetails', JSON.stringify(investmentDetails));
+                this.renderInvestments();
+            }
+        };
+
+        // Automatically restore any sold SAFEs when initializing
+        this.restoreSoldSafe();
+
         // Sell button
         document.getElementById('sellInvestmentBtn').addEventListener('click', () => {
             this.showSellModal();
@@ -1138,9 +1162,22 @@ class Investments {
         // Populate company select
         const sellCompanySelect = document.getElementById('sellCompanySelect');
         const investmentAccounts = this.getInvestmentAccounts();
+        const investmentDetails = JSON.parse(localStorage.getItem('investmentDetails')) || {};
+        
         investmentAccounts.forEach(account => {
             const { transactions } = this.getTransactionsForAccount(account.id);
-            if (transactions.length > 0) {
+            // Check if there are any active investments (either transactions with remaining shares or active SAFEs)
+            const hasActiveInvestments = transactions.some(transaction => {
+                const details = investmentDetails[account.id]?.[transaction.date];
+                // Include if it's a SAFE/Note that hasn't been sold (fmv is undefined or non-zero), or if there are remaining shares
+                return details && (
+                    (['SAFE', 'Convertible Note'].includes(details.round) && details.fmv !== 0) ||
+                    (details.shares && details.shares > 0) ||
+                    (['SAFE', 'Convertible Note'].includes(details.round) && details.fmv === undefined)
+                );
+            });
+            
+            if (hasActiveInvestments) {
                 const option = document.createElement('option');
                 option.value = account.id;
                 option.textContent = `${account.code} - ${account.name}`;
@@ -1367,7 +1404,7 @@ class Investments {
             // Create journal entries
             const journalEntries = JSON.parse(localStorage.getItem('journalEntries')) || [];
             
-            // 1. Record the sale
+            // 1. Record the sale and proceeds
             const saleEntry = {
                 date: date,
                 description: `Sale of ${totalShares} shares of ${account.name}`,
@@ -1379,6 +1416,14 @@ class Investments {
                         description: 'Investment sale',
                         type: 'credit',
                         amount: totalCostBasis
+                    },
+                    {
+                        accountId: 'CASH', // Placeholder - will be reconciled later
+                        accountName: 'Cash',
+                        accountType: 'Bank Account',
+                        description: 'Sale proceeds',
+                        type: 'debit',
+                        amount: saleAmount
                     }
                 ],
                 id: Date.now(),
@@ -1389,6 +1434,8 @@ class Investments {
             // 2. Record realized gain/loss
             if (Math.abs(realizedGainLoss) > 0.01) {
                 const gainLossAccount = this.getOrCreateGainLossAccount();
+                
+                // Add realized gain/loss to the sale entry
                 saleEntry.lineItems.push({
                     accountId: gainLossAccount.id.toString(),
                     accountName: `${gainLossAccount.code} - ${gainLossAccount.name}`,
@@ -1405,23 +1452,34 @@ class Investments {
             // Update investment details for each affected round
             roundSales.forEach(sale => {
                 const originalDetails = sale.details;
-                const remainingShares = originalDetails.shares - sale.shares;
                 
                 if (!investmentDetails[account.id]) {
                     investmentDetails[account.id] = {};
                 }
                 
-                if (remainingShares > 0) {
-                    // Update existing round with remaining shares
-                    investmentDetails[account.id][sale.date] = {
-                        ...originalDetails,
-                        shares: remainingShares,
-                        fmv: remainingShares * price,
-                        fmvPerShare: price
-                    };
+                if (sale.type === 'equity') {
+                    const remainingShares = originalDetails.shares - sale.shares;
+                    const remainingCost = (remainingShares / originalDetails.shares) * sale.costBasis;
+                    
+                    if (remainingShares > 0) {
+                        // Update existing round with remaining shares and cost basis
+                        investmentDetails[account.id][sale.date] = {
+                            ...originalDetails,
+                            shares: remainingShares,
+                            fmv: remainingShares * price,
+                            fmvPerShare: price,
+                            costBasis: remainingCost
+                        };
+                    } else {
+                        // Remove the round if no shares remain
+                        delete investmentDetails[account.id][sale.date];
+                    }
                 } else {
-                    // Remove the round if no shares remain
-                    delete investmentDetails[account.id][sale.date];
+                    // For SAFE/Note, mark it as sold by setting fmv to 0
+                    investmentDetails[account.id][sale.date] = {
+                        ...sale.details,
+                        fmv: 0
+                    };
                 }
             });
             
@@ -3332,19 +3390,29 @@ class Reconciliation {
         const reconciledEntries = JSON.parse(localStorage.getItem('reconciledEntries')) || {};
         
         // Get unreconciled business transactions
-        const unreconciledTransactions = journalEntries.filter(entry => 
-            !entry.reconciled && 
-            entry.transactionType !== 'bank' &&
-            // For investment transactions, match the investment amount directly
-            (entry.transactionType === 'investment' ? 
-                entry.lineItems[0].amount === Math.abs(bankTransaction.amount) :
-                // For other transactions, match amount considering debit/credit
-                entry.lineItems.some(item => {
-                    const itemAmount = item.type === 'debit' ? item.amount : -item.amount;
-                    return Math.abs(itemAmount - bankTransaction.amount) < 0.01;
-                })
-            )
-        );
+        const unreconciledTransactions = journalEntries.filter(entry => {
+            if (entry.reconciled || entry.transactionType === 'bank') {
+                return false;
+            }
+
+            // For investment transactions, match the cash proceeds line item
+            if (entry.transactionType === 'investment') {
+                const cashLineItem = entry.lineItems.find(item => 
+                    item.accountType === 'Bank Account' && 
+                    item.description === 'Sale proceeds'
+                );
+                if (cashLineItem) {
+                    const cashAmount = cashLineItem.type === 'debit' ? cashLineItem.amount : -cashLineItem.amount;
+                    return Math.abs(cashAmount - bankTransaction.amount) < 0.01;
+                }
+            }
+
+            // For other transactions, match amount considering debit/credit
+            return entry.lineItems.some(item => {
+                const itemAmount = item.type === 'debit' ? item.amount : -item.amount;
+                return Math.abs(itemAmount - bankTransaction.amount) < 0.01;
+            });
+        });
 
         let options = '';
         unreconciledTransactions.forEach(entry => {
