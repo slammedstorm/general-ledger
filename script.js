@@ -766,8 +766,22 @@ class Investments {
         this.modal = document.getElementById('companyDetailsModal');
         this.modalCompanyName = document.getElementById('modalCompanyName');
         this.modalBody = document.getElementById('companyDetailsBody');
+        this.investmentStatus = {
+            ACTIVE: 'Active',
+            INACTIVE: 'Inactive',
+            EXITED: 'Exited'
+        };
         this.initializeEventListeners();
         this.renderInvestments();
+        this.initializeInvestmentSubledger();
+    }
+
+    initializeInvestmentSubledger() {
+        const subledger = JSON.parse(localStorage.getItem('investmentSubledger')) || {};
+        if (!subledger.transactions) {
+            subledger.transactions = [];
+            localStorage.setItem('investmentSubledger', JSON.stringify(subledger));
+        }
     }
 
     initializeEventListeners() {
@@ -853,6 +867,7 @@ class Investments {
                             <thead>
                                 <tr>
                                     <th>Round</th>
+                                    <th>Tranche</th>
                                     <th>Date</th>
                                     <th>Shares</th>
                                     <th>Cost Basis</th>
@@ -871,12 +886,14 @@ class Investments {
                                         </select>
                                     </td>
                                     <td>
+                                        <input type="text" id="newTranche" style="width: 100%;" placeholder="Tranche (e.g. First Close)">
+                                    </td>
+                                    <td>
                                         <input type="date" id="newDate" style="width: 100%;" required value="${new Date().toISOString().split('T')[0]}">
                                     </td>
-                    <td>
-                        <input type="number" id="newShares" style="width: 100%;" step="1" min="0" 
-                            ${['SAFE', 'Convertible Note'].includes(document.getElementById('newRound').value) ? '' : 'required'}>
-                    </td>
+                                    <td>
+                                        <input type="number" id="newShares" style="width: 100%;" step="1" min="0">
+                                    </td>
                                     <td>
                                         <input type="number" id="newCostBasis" style="width: 100%;" step="0.01" min="0" required>
                                     </td>
@@ -1023,6 +1040,7 @@ class Investments {
                     }
                     investmentDetails[newAccount.id][date] = {
                         round: round,
+                        tranche: document.getElementById('newTranche').value.trim(),
                         shares: shares,
                         fmv: costBasis,
                         fmvPerShare: shares ? costBasis / shares : null
@@ -1075,6 +1093,7 @@ class Investments {
                     }
                     investmentDetails[account.id][date] = {
                         round: round,
+                        tranche: document.getElementById('newTranche').value.trim(),
                         shares: shares,
                         fmv: costBasis,
                         fmvPerShare: shares ? costBasis / shares : null
@@ -1941,118 +1960,178 @@ class Investments {
         this.investmentsBody.innerHTML = '';
         const investmentAccounts = this.getInvestmentAccounts();
         const investmentDetails = JSON.parse(localStorage.getItem('investmentDetails')) || {};
+        const journalEntries = JSON.parse(localStorage.getItem('journalEntries')) || [];
+        
+        // Group transactions by company
+        const companiesData = {};
         
         investmentAccounts.forEach(account => {
-            const { transactions } = this.getTransactionsForAccount(account.id);
-            let totalCost = 0;
-            let totalFMV = 0;
-
-            // If no transactions, show a row with zero values
-            if (transactions.length === 0) {
-                const row = document.createElement('tr');
-                row.style.backgroundColor = '#f8f9fa';  // Light gray background for zero-balance rows
-                row.innerHTML = `
-                    <td>${account.name}</td>
-                    <td>${new Date().toLocaleDateString()}</td>
-                    <td>-</td>
-                    <td class="amount-cell">-</td>
-                    <td class="amount-cell">-</td>
-                    <td class="amount-cell">-</td>
-                    <td class="amount-cell">-</td>
-                    <td class="amount-cell">-</td>
-                    <td class="amount-cell">-</td>
-                    <td></td>
-                `;
+            companiesData[account.id] = {
+                name: account.name,
+                purchases: [],
+                sales: []
+            };
+            
+            // Get all transactions for this account
+            const accountTransactions = journalEntries.filter(entry => 
+                entry.lineItems.some(item => item.accountId === account.id.toString())
+            );
+            
+            accountTransactions.forEach(transaction => {
+                const lineItem = transaction.lineItems.find(item => 
+                    item.accountId === account.id.toString()
+                );
                 
-                this.investmentsBody.appendChild(row);
-                return;
-            }
-
-            // Add individual transaction rows
-            transactions.forEach(transaction => {
-                const cost = transaction.amount;
                 const details = investmentDetails[account.id]?.[transaction.date] || {};
+                const amount = lineItem.type === 'debit' ? lineItem.amount : -lineItem.amount;
                 
-                // Use stored values or defaults
-                const shares = details.shares;
-                const costPerShare = shares ? cost / shares : null;
-                const fmvPerShare = details.fmvPerShare;
-                const fmv = details.fmv || cost;
-                const unrealizedGainLoss = fmv - cost;
+                const transactionData = {
+                    date: transaction.date,
+                    description: transaction.description,
+                    round: details.round || '',
+                    tranche: details.tranche || '',
+                    shares: details.shares,
+                    amount: Math.abs(amount),
+                    pricePerShare: details.shares ? Math.abs(amount) / details.shares : null,
+                    details: details
+                };
                 
-                totalCost += cost;
-                totalFMV += fmv;
-
-                const rowId = `${account.id}-${transaction.date}`;
-                
-                if (this.editingRowId === rowId) {
-                    const row = this.generateEditingRow(
-                        account, 
-                        transaction, 
-                        shares, 
-                        costPerShare, 
-                        fmvPerShare, 
-                        cost, 
-                        fmv,
-                        details
-                    );
-                    this.investmentsBody.appendChild(row);
+                // Determine if this is a purchase or sale based on the amount direction
+                if (amount > 0) {
+                    companiesData[account.id].purchases.push(transactionData);
                 } else {
-                    const row = document.createElement('tr');
-                    row.innerHTML = `
-                        <td class="company-name" style="cursor: pointer;">${account.name}</td>
-                        <td>${this.formatDate(transaction.date)}</td>
-                        <td>${details.round || ''}</td>
-                        <td class="amount-cell">
-                            ${details.round && ['SAFE', 'Convertible Note'].includes(details.round) ? 'N/A' : 
-                              shares ? shares.toLocaleString() : ''}
-                        </td>
-                        <td class="amount-cell">
-                            ${details.round && ['SAFE', 'Convertible Note'].includes(details.round) ? 'N/A' : 
-                              costPerShare ? this.formatCurrency(costPerShare) : ''}
-                        </td>
-                        <td class="amount-cell">
-                            ${details.round && ['SAFE', 'Convertible Note'].includes(details.round) ? 'N/A' : 
-                              fmvPerShare ? this.formatCurrency(fmvPerShare) : ''}
-                        </td>
-                        <td class="amount-cell">${this.formatCurrency(cost)}</td>
-                        <td class="amount-cell">${this.formatCurrency(fmv)}</td>
-                        <td class="amount-cell ${unrealizedGainLoss >= 0 ? 'positive' : 'negative'}">
-                            ${this.formatCurrency(unrealizedGainLoss)}
-                        </td>
-                        <td></td>
-                    `;
-
-
-                    // Add click handler for company name
-                    row.querySelector('.company-name').addEventListener('click', () => {
-                        this.showCompanyDetails(account);
-                    });
-                    
-                    this.investmentsBody.appendChild(row);
+                    companiesData[account.id].sales.push(transactionData);
                 }
             });
-
-            // Add subtotal row if there are multiple transactions
-            if (transactions.length > 1) {
-                const totalUnrealizedGainLoss = totalFMV - totalCost;
-                const subtotalRow = document.createElement('tr');
-                subtotalRow.className = 'subtotal-row';
-                subtotalRow.innerHTML = `
-                    <td colspan="6"><strong>Subtotal for ${account.name}</strong></td>
-                    <td class="amount-cell"><strong>${this.formatCurrency(totalCost)}</strong></td>
-                    <td class="amount-cell"><strong>${this.formatCurrency(totalFMV)}</strong></td>
-                    <td class="amount-cell ${totalUnrealizedGainLoss >= 0 ? 'positive' : 'negative'}">
-                        <strong>${this.formatCurrency(totalUnrealizedGainLoss)}</strong>
+        });
+        
+        // Render transactions grouped by company
+        Object.entries(companiesData).forEach(([accountId, data]) => {
+            if (data.purchases.length === 0 && data.sales.length === 0) {
+                return; // Skip companies with no transactions
+            }
+            
+            // Company header
+            const headerRow = document.createElement('tr');
+            headerRow.className = 'company-header';
+            headerRow.innerHTML = `
+                <td colspan="10" class="company-name" style="cursor: pointer; background-color: #f0f0f0; padding: 10px;">
+                    <strong>${data.name}</strong>
+                </td>
+            `;
+            
+            headerRow.querySelector('.company-name').addEventListener('click', () => {
+                this.showCompanyDetails(this.getInvestmentAccounts().find(a => a.id.toString() === accountId));
+            });
+            
+            this.investmentsBody.appendChild(headerRow);
+            
+            // Purchases section
+            if (data.purchases.length > 0) {
+                const purchaseHeader = document.createElement('tr');
+                purchaseHeader.innerHTML = `
+                    <td colspan="10" style="background-color: #e8f4e8; padding: 5px 10px;">
+                        <strong>Purchases</strong>
                     </td>
                 `;
-                this.investmentsBody.appendChild(subtotalRow);
-
-                // Add spacer row
-                const spacerRow = document.createElement('tr');
-                spacerRow.innerHTML = '<td colspan="9">&nbsp;</td>';
-                this.investmentsBody.appendChild(spacerRow);
+                this.investmentsBody.appendChild(purchaseHeader);
+                
+                let totalPurchaseAmount = 0;
+                let totalPurchaseShares = 0;
+                
+                data.purchases
+                    .sort((a, b) => new Date(a.date) - new Date(b.date))
+                    .forEach(purchase => {
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
+                            <td style="padding-left: 20px;">${this.formatDate(purchase.date)}</td>
+                            <td>${purchase.round}</td>
+                            <td>${purchase.tranche}</td>
+                            <td class="amount-cell">
+                                ${purchase.round && ['SAFE', 'Convertible Note'].includes(purchase.round) ? 'N/A' : 
+                                  purchase.shares ? purchase.shares.toLocaleString() : ''}
+                            </td>
+                            <td class="amount-cell">
+                                ${purchase.round && ['SAFE', 'Convertible Note'].includes(purchase.round) ? 'N/A' : 
+                                  purchase.pricePerShare ? this.formatCurrency(purchase.pricePerShare) : ''}
+                            </td>
+                            <td class="amount-cell">${this.formatCurrency(purchase.amount)}</td>
+                            <td colspan="4">${purchase.description}</td>
+                        `;
+                        this.investmentsBody.appendChild(row);
+                        
+                        totalPurchaseAmount += purchase.amount;
+                        if (purchase.shares) totalPurchaseShares += purchase.shares;
+                    });
+                
+                // Purchase subtotal
+                const purchaseSubtotal = document.createElement('tr');
+                purchaseSubtotal.className = 'subtotal-row';
+                purchaseSubtotal.innerHTML = `
+                    <td colspan="3" style="padding-left: 20px;"><strong>Total Purchases</strong></td>
+                    <td class="amount-cell"><strong>${totalPurchaseShares ? totalPurchaseShares.toLocaleString() : '-'}</strong></td>
+                    <td class="amount-cell">-</td>
+                    <td class="amount-cell"><strong>${this.formatCurrency(totalPurchaseAmount)}</strong></td>
+                    <td colspan="4"></td>
+                `;
+                this.investmentsBody.appendChild(purchaseSubtotal);
             }
+            
+            // Sales section
+            if (data.sales.length > 0) {
+                const saleHeader = document.createElement('tr');
+                saleHeader.innerHTML = `
+                    <td colspan="10" style="background-color: #f4e8e8; padding: 5px 10px;">
+                        <strong>Sales</strong>
+                    </td>
+                `;
+                this.investmentsBody.appendChild(saleHeader);
+                
+                let totalSaleAmount = 0;
+                let totalSaleShares = 0;
+                
+                data.sales
+                    .sort((a, b) => new Date(a.date) - new Date(b.date))
+                    .forEach(sale => {
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
+                            <td style="padding-left: 20px;">${this.formatDate(sale.date)}</td>
+                            <td>${sale.round}</td>
+                            <td>${sale.tranche}</td>
+                            <td class="amount-cell">
+                                ${sale.round && ['SAFE', 'Convertible Note'].includes(sale.round) ? 'N/A' : 
+                                  sale.shares ? sale.shares.toLocaleString() : ''}
+                            </td>
+                            <td class="amount-cell">
+                                ${sale.round && ['SAFE', 'Convertible Note'].includes(sale.round) ? 'N/A' : 
+                                  sale.pricePerShare ? this.formatCurrency(sale.pricePerShare) : ''}
+                            </td>
+                            <td class="amount-cell">${this.formatCurrency(sale.amount)}</td>
+                            <td colspan="4">${sale.description}</td>
+                        `;
+                        this.investmentsBody.appendChild(row);
+                        
+                        totalSaleAmount += sale.amount;
+                        if (sale.shares) totalSaleShares += sale.shares;
+                    });
+                
+                // Sale subtotal
+                const saleSubtotal = document.createElement('tr');
+                saleSubtotal.className = 'subtotal-row';
+                saleSubtotal.innerHTML = `
+                    <td colspan="3" style="padding-left: 20px;"><strong>Total Sales</strong></td>
+                    <td class="amount-cell"><strong>${totalSaleShares ? totalSaleShares.toLocaleString() : '-'}</strong></td>
+                    <td class="amount-cell">-</td>
+                    <td class="amount-cell"><strong>${this.formatCurrency(totalSaleAmount)}</strong></td>
+                    <td colspan="4"></td>
+                `;
+                this.investmentsBody.appendChild(saleSubtotal);
+            }
+            
+            // Add spacer row between companies
+            const spacerRow = document.createElement('tr');
+            spacerRow.innerHTML = '<td colspan="10">&nbsp;</td>';
+            this.investmentsBody.appendChild(spacerRow);
         });
     }
 
@@ -3387,31 +3466,18 @@ class Reconciliation {
 
     generateTransactionOptions(bankTransaction) {
         const journalEntries = JSON.parse(localStorage.getItem('journalEntries')) || [];
-        const reconciledEntries = JSON.parse(localStorage.getItem('reconciledEntries')) || {};
         
-        // Get unreconciled business transactions
+        // Get unreconciled transactions that match the bank date
+        const bankDate = new Date(bankTransaction.date + 'T00:00:00');
         const unreconciledTransactions = journalEntries.filter(entry => {
-            if (entry.reconciled || entry.transactionType === 'bank') {
+            // Skip reconciled bank transactions
+            if (entry.transactionType === 'bank' && entry.reconciled) {
                 return false;
             }
-
-            // For investment transactions, match the cash proceeds line item
-            if (entry.transactionType === 'investment') {
-                const cashLineItem = entry.lineItems.find(item => 
-                    item.accountType === 'Bank Account' && 
-                    item.description === 'Sale proceeds'
-                );
-                if (cashLineItem) {
-                    const cashAmount = cashLineItem.type === 'debit' ? cashLineItem.amount : -cashLineItem.amount;
-                    return Math.abs(cashAmount - bankTransaction.amount) < 0.01;
-                }
-            }
-
-            // For other transactions, match amount considering debit/credit
-            return entry.lineItems.some(item => {
-                const itemAmount = item.type === 'debit' ? item.amount : -item.amount;
-                return Math.abs(itemAmount - bankTransaction.amount) < 0.01;
-            });
+            
+            // Match date
+            const entryDate = new Date(entry.date + 'T00:00:00');
+            return entryDate.getTime() === bankDate.getTime() && !entry.reconciled;
         });
 
         let options = '';

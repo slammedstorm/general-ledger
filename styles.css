@@ -509,6 +509,35 @@ th {
     justify-content: flex-end;
 }
 
+/* Investment Table Styles */
+#investmentsTable th,
+#investmentsTable td {
+    text-align: left;
+    padding: 12px;
+}
+
+#investmentsTable th:nth-child(4),
+#investmentsTable th:nth-child(5),
+#investmentsTable th:nth-child(6),
+#investmentsTable th:nth-child(7),
+#investmentsTable th:nth-child(8),
+#investmentsTable th:nth-child(9) {
+    text-align: right;
+}
+
+#investmentsTable td:nth-child(4),
+#investmentsTable td:nth-child(5),
+#investmentsTable td:nth-child(6),
+#investmentsTable td:nth-child(7),
+#investmentsTable td:nth-child(8),
+#investmentsTable td:nth-child(9) {
+    text-align: right;
+}
+
+#investmentsTable .action-cell {
+    text-align: left;
+}
+
 .primary-btn {
     background-color: #007bff;
     color: white;
